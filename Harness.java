@@ -77,11 +77,17 @@ public class Harness{
 	}
 
 	private void runDcpuMenu(DCPU16 d){
+		DCPU16Screen screen = null;
 		boolean watching = false;
 		while (true){
 			if (watching && isRunning(d)){
 				getChoice();
-				d.setDebug(false);
+				if (screen != null){
+					screen.stop();
+					screen = null;
+				}
+				else
+					d.setDebug(false);
 				watching = false;
 			}
 			showDcpu(d);
@@ -89,6 +95,10 @@ public class Harness{
 			ask("Choose");
 			switch (getChoice().charAt(0)){
 				case '0':
+					if (screen != null){
+						screen.stop();
+						screen = null;
+					}
 					return;
 				case '1':
 					toggleRunDcpu(d);
@@ -108,10 +118,21 @@ public class Harness{
 				case '6':
 					d.step();
 					break;
+				case '7':
+					new Thread(screen = new DCPU16Screen(d.memory(), 0x8000)).start();
+					watching = true;
+					if (isRunning(d))
+						say("Watching screen...");
+					else
+						say("Will watch screen when the DCPU starts...");
+					break;
 				case '8':
 					d.setDebug(true);
 					watching = true;
-					say("Watching...");
+					if (isRunning(d))
+						say("Watching debug...");
+					else
+						say("Will watch debug when the DCPU starts...");
 					break;
 				case '9':
 					break;
@@ -129,7 +150,8 @@ public class Harness{
 		say("4: Set register");
 		say("5: Reset registers");
 		say("6: Step");
-		say("8: Watch");
+		say("7: Watch VRAM");
+		say("8: Watch Debug");
 		say("9: Show again");
 	}
 

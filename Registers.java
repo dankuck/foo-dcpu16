@@ -91,16 +91,16 @@ public class Registers{
 	}
 
 	public String dump(){
-		return " A: " + Hexer.hex(read(A)) + "\n"
-				+ " B: " + Hexer.hex(read(B)) + "\n"
-				+ " C: " + Hexer.hex(read(C)) + "\n"
-				+ " X: " + Hexer.hex(read(X)) + "\n"
-				+ " Y: " + Hexer.hex(read(Y)) + "\n"
+		return " A: " + Hexer.hex(read(A)) + " "
+				+ " B: " + Hexer.hex(read(B)) + " "
+				+ " C: " + Hexer.hex(read(C)) + " "
+				+ " X: " + Hexer.hex(read(X)) + " "
+				+ " Y: " + Hexer.hex(read(Y)) + " "
 				+ " Z: " + Hexer.hex(read(Z)) + "\n"
-				+ " I: " + Hexer.hex(read(I)) + "\n"
+				+ " I: " + Hexer.hex(read(I)) + " "
 				+ " J: " + Hexer.hex(read(J)) + "\n"
-				+ "PC: " + Hexer.hex(read(PC)) + "\n"
-				+ "SP: " + Hexer.hex(read(SP)) + "\n"
+				+ "PC: " + Hexer.hex(read(PC)) + " "
+				+ "SP: " + Hexer.hex(read(SP)) + " "
 				+ " O: " + Hexer.hex(read(O)) + "\n";
 	}
 
