@@ -2,6 +2,7 @@
 // Holds multiple DCPU16's and lets us fiddle with them
 
 import java.util.*;
+import java.io.*;
 
 public class Harness{
 
@@ -135,6 +136,9 @@ public class Harness{
 						say("Will watch debug when the DCPU starts...");
 					break;
 				case '9':
+					loadFromFile(d.memory());
+					break;
+				case 'R':
 					break;
 				default:
 					say("That's not a choice");
@@ -152,7 +156,31 @@ public class Harness{
 		say("6: Step");
 		say("7: Watch VRAM");
 		say("8: Watch Debug");
-		say("9: Show again");
+		say("9: Load from file");
+		say("R: Refresh");
+	}
+
+	private void loadFromFile(Memory memory){
+		try{
+			ask("Filename");
+			File file = new File(getChoice());
+			FileInputStream reader = new FileInputStream(file);
+			byte[] octets = new byte[(int)file.length()];
+			reader.read(octets);
+			int[] sextets = new int[octets.length / 2];
+			for (int i = 0; i < sextets.length; i++)
+				sextets[i] = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
+			ask("Memory location");
+			int location = getInteger();
+			memory.write(location, sextets);
+			say("Loaded.");
+		}
+		catch (FileNotFoundException e){
+			say("" + e);
+		}
+		catch (IOException e){
+			say("" + e);
+		}
 	}
 
 	private void setRegister(DCPU16 d){
@@ -184,7 +212,7 @@ public class Harness{
 	}
 
 	private void write(DCPU16 d){
-		ask("What location?");
+		ask("Memory location");
 		int location = Hexer.unhex(getChoice());
 		ask("Enter bytes (in space-separated hex)");
 		int[] bytes = Hexer.unhexArray(getChoice());
@@ -193,7 +221,7 @@ public class Harness{
 
 	private void read(DCPU16 d){
 		int location = 0;
-		while (location != 99) {
+		while (location != 0x99) {
 			say(d.memory().dump(location, 80));
 			ask("Location (99 to quit) ");
 			location = Hexer.unhex(getChoice());
