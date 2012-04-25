@@ -21,10 +21,6 @@ class DCPU16Screen implements Runnable{
 	public void run(){
 		running = true;
 		synchronized(this){
-			try{
-				wait(100);
-			}
-			catch (InterruptedException e){}
 			while (true){
 				if (stop)
 					break;
