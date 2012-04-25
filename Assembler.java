@@ -53,13 +53,11 @@ class Assembler{
 		throws Exception
 	{
 		int[] program = assemble();
-		char[] bytes = new char[program.length * 2];
+		FileOutputStream writer = new FileOutputStream(outfile);
 		for (int i = 0; i < program.length; i++){
-			bytes[i * 2] = (char)(program[i] >> 8);
-			bytes[i * 2 + 1] = (char)(program[i] & 0xFF);
+			writer.write((byte)(program[i] >> 8));
+			writer.write((byte)(program[i] & 0xFF));
 		}
-		FileWriter writer = new FileWriter(outfile);
-		writer.write(bytes);
 		writer.close();
 	}
 
@@ -152,9 +150,15 @@ class Assembler{
 		}
 	}
 
-	private void structurize(){
-		for (int i = 0; i < lines.length; i++)
-			structures.put(i, new AssembleStructure(lines[i]));
+	private void structurize()
+		throws Exception
+	{
+		for (int i = 0; i < lines.length; i++){
+			if (lines[i][0].equalsIgnoreCase("DAT"))
+				structures.put(i, new AssembleData(lines[i]));
+			else
+				structures.put(i, new AssembleInstruction(lines[i]));
+		}
 	}
 
 	private void addLabel(String label, int line){
@@ -169,7 +173,7 @@ class Assembler{
 		throws Exception
 	{
 		String contents = contents();
-		StringTokenizer tokens = new StringTokenizer(contents, ", \t\n\r\f", true);
+		StringTokenizer tokens = new StringTokenizer(contents, ", \t\n\r\f\"\\", true);
 		boolean inComment = false;
 		String[][] lines = new String[contents.length()][];
 		int currentLine = 0;
@@ -196,13 +200,31 @@ class Assembler{
 				inComment = true;
 				continue;
 			}
+			if (token.charAt(0) == '"'){
+				boolean escaping = false;
+				while (tokens.hasMoreTokens()){
+					String subtoken = tokens.nextToken();
+					if (! escaping && subtoken.charAt(0) == '\\'){
+						escaping = true;
+					}
+					else if (! escaping && subtoken.charAt(0) == '"'){
+						token += subtoken;
+						break;
+					}
+					else
+						escaping = false;
+					token += subtoken;
+				}
+			}
 			if (token.charAt(0) == ':'){
 				if (currentToken > 0)
 					throw new Exception("Label not at beginning of line " + token);
 				addLabel(token.substring(1), currentLine);
 				continue;
 			}
-			if (currentToken >= 3)
+			if (currentToken == 0 && token.equalsIgnoreCase("DAT"))
+				line = new String[tokens.countTokens()];
+			if (currentToken >= line.length)
 				throw new Exception("Too many tokens on line " + currentLine + ": " + joinLine(line) + ", " + line);
 			line[currentToken++] = token;
 		}
@@ -218,11 +240,104 @@ class Assembler{
 		return str;
 	}
 
-	private class AssembleStructure{
+	private interface AssembleStructure{
+
+		public int length()
+			throws Exception;
+
+		public String toHexParts()
+			throws Exception;
+
+		public int[] toBytes()
+			throws Exception;
+
+	}
+
+	private class AssembleData implements AssembleStructure{
+
+		private int[][] data;
+
+		public AssembleData(String[] line)
+			throws Exception
+		{
+			data = new int[line.length - 1][];
+			for (int i = 1; i < line.length; i++){
+				if (line[i].charAt(0) == '"'){
+					data[i - 1] = getString(line[i]);
+				}
+				else if (isNumericExpression(line[i])){
+					int[] number = new int[1];
+					number[0] = getExpression(line[i]);
+					data[i - 1] = number;
+				}
+				else
+					throw new Exception("Data not understood: " + line[i]);
+			}
+		}
+
+		private int[] getString(String code){
+			HashMap<Character, Character> escapes = new HashMap<Character, Character>();
+			escapes.put('n', '\n');
+			escapes.put('r', '\r');
+			escapes.put('t', '\t');
+			escapes.put('f', '\f');
+			boolean escaping = false;
+			int[] string = new int[code.length()];
+			int currentChar = 0;
+			for (int i = 1; i < code.length() - 1; i++){ // skips the outer quotes
+				char c = code.charAt(i);
+				if (escaping){
+					escaping = false;
+					Character escaped = escapes.get(c);
+					if (escaped != null)
+						c = escaped;
+				}
+				else if (c == '\\'){
+					escaping = true;
+					continue;
+				}
+				string[currentChar++] = c;
+			}
+			string[currentChar++] = 0; // null-char delimited I assume.
+			int[] trimString = new int[currentChar];
+			System.arraycopy(string, 0, trimString, 0, currentChar);
+			return trimString;
+		}
+
+		public int length()
+			throws Exception
+		{
+			int length = 0;
+			for (int i = 0; i < data.length; i++)
+				length += data[i].length;
+			return length;
+		}
+
+		public String toHexParts()
+			throws Exception
+		{
+			return Hexer.hexArray(toBytes());
+		}
+
+		public int[] toBytes()
+			throws Exception
+		{
+			int[] bytes = new int[length()];
+			int position = 0;
+			for (int i = 0; i < data.length; i++){
+				System.arraycopy(data[i], 0, bytes, position, data[i].length);
+				position += data[i].length;
+			}
+			return bytes;
+		}
+
+	}
+
+	private class AssembleInstruction implements AssembleStructure{
 
 		public String instruction;
-		public AssembleData a;
-		public AssembleData b;
+		public AssembleInstructionData a;
+		public AssembleInstructionData b;
 
 		private HashMap<String, Integer> instructionBytes;
 
@@ -248,13 +363,13 @@ class Assembler{
 			}
 		}
 
-		public AssembleStructure(String[] line){
+		public AssembleInstruction(String[] line){
 			init();
 			instruction = line[0];
 			if (line.length > 1)
-				a = new AssembleData(line[1]);
+				a = new AssembleInstructionData(line[1]);
 			if (line.length > 2)
-				b = new AssembleData(line[2]);
+				b = new AssembleInstructionData(line[2]);
 		}
 
 		public int length()
@@ -310,11 +425,11 @@ class Assembler{
 			return bytes;
 		}
 
-		public int nonbasicInstructionByte(){
+		private int nonbasicInstructionByte(){
 			return 0x01; // JSR is the only one defined
 		}
 
-		public int instructionByte()
+		private int instructionByte()
 			throws Exception
 		{
 			Integer inst = instructionBytes.get(instruction);
@@ -332,7 +447,7 @@ class Assembler{
 			return str;
 		}
 
-		public class AssembleData{
+		public class AssembleInstructionData{
 
 			private String data;
 
@@ -382,7 +497,7 @@ class Assembler{
 				}
 			}
 
-			public AssembleData(String data){
+			public AssembleInstructionData(String data){
 				staticInit();
 				this.data = data;
 			}
