@@ -12,12 +12,24 @@ class DCPU16Screen implements Runnable{
 		this.beginning = beginning;
 	}
 
+
+	public DCPU16Screen(Memory memory){
+		this.m = memory;
+		this.beginning = 0x8000;
+	}
+
 	public void run(){
 		running = true;
-		while (true){
-			if (stop)
-				break;
-			refresh();
+		synchronized(this){
+			while (true){
+				if (stop)
+					break;
+				if (! refresh()) // if refresh does something, don't wait, go around again immediately
+					try{
+						wait(100);
+					}
+					catch (InterruptedException e){}
+			}
 		}
 		running = false;
 	}
@@ -36,12 +48,12 @@ class DCPU16Screen implements Runnable{
 		return true;
 	}
 
-	public void refresh(){
+	public boolean refresh(){
 		int[] bytes = m.read(beginning, 32 * 12);
 		if (lastBytes == null || ! sameBytes(bytes, lastBytes))
 			lastBytes = bytes;
 		else
-			return;
+			return false;
 		System.out.println("\n");
 		String horizontal = "+";
 		for (int i = 0; i < 32; i++)
@@ -56,6 +68,7 @@ class DCPU16Screen implements Runnable{
 				System.out.println("|");
 		}
 		System.out.println(horizontal);
+		return true;
 	}
 
 }
