@@ -219,7 +219,7 @@ public class Harness{
 			Thread t = new Thread(new Runnable(){
 				public void run(){
 					try{
-						d.run();
+						d.run(100000); // max speed = 100 kHz
 					}
 					catch (Exception e){
 						exceptions.put(d, e);

@@ -12,7 +12,6 @@ class DCPU16Screen implements Runnable{
 		this.beginning = beginning;
 	}
 
-
 	public DCPU16Screen(Memory memory){
 		this.m = memory;
 		this.beginning = 0x8000;

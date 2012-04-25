@@ -8,6 +8,9 @@ public class DCPU16{
 	private boolean skipInstruction = false;
 	private boolean running = false;
 	private boolean stop = false;
+	private long startTime = -1;
+	private long startCycles = -1;
+	private long cycles = 0;
 
 	private boolean debugging = false;
 
@@ -44,28 +47,72 @@ public class DCPU16{
 			System.out.println(s);
 	}
 
+	/**
+	 * Calls run(0)
+	 */
 	public void run(){
-		running = true;
-		while (true){
-			if (stop){
-				stop = false;
-				running = false;
-				return;
-			}
-			try{
-				step();
-			}
-			catch (RuntimeException e){
-				running = false;
-				debug("" + e);
-				throw e;
+		run(0);
+	}
+
+	/**
+	 * Runs step() in a loop until a crash or until some other thread calls stop().
+	 *
+	 * It also keeps track of the speed of execution for curiousity's sake and/or to limit speed.
+	 *
+	 * @param hertzLimit	if > 0, the loop will do wait() calls if hertz() exceeds this limit.
+	 */
+	public void run(long hertzLimit){
+		doStart();
+		synchronized(this){
+			while (true){
+				if (stop){
+					doStop();
+					return;
+				}
+				try{
+					step();
+					if (hertzLimit > 0 && hertz() > hertzLimit)
+						try{
+							wait(100);
+						}
+						catch (InterruptedException e){}
+				}
+				catch (RuntimeException e){
+					doStop();
+					debug("" + e);
+					throw e;
+				}
 			}
 		}
+	}
+
+	private void doStart(){
+		stop = false;
+		running = true;
+		startTime = new java.util.Date().getTime();
+		startCycles = cycles;
+	}
+
+	private void doStop(){
+		stop = false;
+		running = false;
+		startTime = -1;
+		startCycles = -1;
 	}
 
 	public void stop(){
 		if (running)
 			stop = true;
+	}
+
+	public double hertz(){
+		if (startTime < 0 || startCycles < 0)
+			return 0.0;
+		long cyclesPassed = cycles - startCycles;
+		long timePassed = new java.util.Date().getTime() - startTime;
+		if (timePassed == 0)
+			return cyclesPassed > 0 ? Double.POSITIVE_INFINITY : 0.0;
+		return 1000 * cyclesPassed / timePassed; // cycles / milliseconds => kHz, kHz * 1000 => hertz
 	}
 
 	public void step(){
@@ -75,18 +122,15 @@ public class DCPU16{
 		int b = (word >> 10) & 0x3F;
 		debug(Hexer.hex(word) + " => " + Hexer.hex(instruction) + " a: " + Hexer.hex(a) + " b: " + Hexer.hex(b));
 		if (instruction == 0){
-			if (skipInstruction){
-				skipInstruction = false;
-				debug("Skipped instruction");
-				return;
-			}
 			nonbasic(a, b);
 		}
 		else{
+			long priorCycles = cycles; // Some of the cycles stuff in the spec is actually just magic
 			Accessor aa = accessor(a);
 			Accessor ba = accessor(b);
 			if (skipInstruction){ // has to happen after we lookup the accessors, in case one needs to eat the next word
 				skipInstruction = false;
+				cycles = priorCycles + 1;
 				debug("Skipped instruction");
 				return;
 			}
@@ -131,30 +175,38 @@ public class DCPU16{
 		debug("SET " + aa + " " + ba);
 		debug("b=" + Hexer.hex(ba.read()));
 		aa.write(ba.read());
+		cycles++;
 	}
 
 	private void add(Accessor aa, Accessor ba){
-
 		debug("ADD " + aa + " " + ba);
 		debug("a=" + Hexer.hex(aa.read()));
 		debug("b=" + Hexer.hex(ba.read()));
 		int v = aa.read() + ba.read();
 		aa.write(v & 0xFFFF);
 		r.o().write(v >> 16);
+		cycles+=2;
 	}
 
 	private void sub(Accessor aa, Accessor ba){
-
 		debug("SUB " + aa + " " + ba);
 		debug("a=" + Hexer.hex(aa.read()));
 		debug("b=" + Hexer.hex(ba.read()));
 		int v = aa.read() - ba.read();
 		aa.write(v & 0xFFFF);
 		r.o().write(v >> 16);
+		cycles+=2;
 	}
 
 	private void nonbasic(int instruction, int a){
+		long priorCycles = cycles; // magic is happening
 		Accessor aa = accessor(a);
+		if (skipInstruction){
+			skipInstruction = false;
+			cycles = priorCycles + 1;
+			debug("Skipped instruction");
+			return;
+		}
 		switch (instruction){
 			case 0x01:
 				jsr(aa); break;
@@ -167,6 +219,7 @@ public class DCPU16{
 		debug("JSR " + aa);
 		m.write(pushStack(), r.pc().read());
 		r.pc().write(aa.read());
+		cycles+=2;
 	}
 
 	public void mul(Accessor aa, Accessor ba){
@@ -175,6 +228,7 @@ public class DCPU16{
 		int v = aa.read() * ba.read();
 		r.o().write(v >> 16);
 		aa.write(v & 0xFFFF);
+		cycles+=2;
 	}
 
 	public void div(Accessor aa, Accessor ba){
@@ -187,6 +241,7 @@ public class DCPU16{
 		}
 		r.o().write(((aa.read() << 16) / ba.read()) & 0xFFFF);
 		aa.write((aa.read() / ba.read()) & 0xFFFF);
+		cycles+=3;
 	}
 
 	public void mod(Accessor aa, Accessor ba){
@@ -196,6 +251,7 @@ public class DCPU16{
 			aa.write(0);		return;
 		}
 		aa.write(aa.read() % ba.read());
+		cycles+=3;
 	}
 
 	public void shl(Accessor aa, Accessor ba){
@@ -204,6 +260,7 @@ public class DCPU16{
 		int v = aa.read() << ba.read();
 		r.o().write((v >> 16) & 0xFFFF);
 		aa.write(v & 0xFFFF);
+		cycles+=2;
 	}
 
 	public void shr(Accessor aa, Accessor ba){
@@ -211,24 +268,28 @@ public class DCPU16{
 		debug("SHR " + aa + " " + ba);
 		r.o().write(((aa.read() << 16) >> ba.read()) & 0xFFFF);
 		aa.write((aa.read() >> ba.read()) & 0xFFFF);
+		cycles+=2;
 	}
 
 	public void band(Accessor aa, Accessor ba){
 
 		debug("AND " + aa + " " + ba);
 		aa.write(aa.read() & ba.read());
+		cycles++;
 	}
 
 	public void bor(Accessor aa, Accessor ba){
 
 		debug("BOR " + aa + " " + ba);
 		aa.write(aa.read() | ba.read());
+		cycles++;
 	}
 
 	public void bxor(Accessor aa, Accessor ba){
 
 		debug("XOR " + aa + " " + ba);
 		aa.write(aa.read() ^ ba.read());
+		cycles++;
 	}
 
 	public void ife(Accessor aa, Accessor ba){
@@ -236,6 +297,7 @@ public class DCPU16{
 		debug("IFE " + aa + " " + ba);
 		if (aa.read() != ba.read())
 			skipInstruction = true;
+		cycles+=2;
 	}
 
 	public void ifn(Accessor aa, Accessor ba){
@@ -243,6 +305,7 @@ public class DCPU16{
 		debug("IFN " + aa + " " + ba);
 		if (aa.read() == ba.read())
 			skipInstruction = true;
+		cycles+=2;
 	}
 
 	public void ifg(Accessor aa, Accessor ba){
@@ -250,6 +313,7 @@ public class DCPU16{
 		debug("IFG " + aa + " " + ba);
 		if (aa.read() <= ba.read())
 			skipInstruction = true;
+		cycles+=2;
 	}
 
 	public void ifb(Accessor aa, Accessor ba){
@@ -257,6 +321,7 @@ public class DCPU16{
 		debug("IFB " + aa + " " + ba);
 		if ((aa.read() & ba.read()) == 0)
 			skipInstruction = true;
+		cycles+=2;
 	}
 
 
@@ -301,9 +366,12 @@ public class DCPU16{
 	}
 
 	public String dump(){
+		double speed = hertz();
 		return "Memory:\n" + m.dump(0, 10) + "...\n"
 				+ "Stack: " + Hexer.hex(r.sp().read()) + "\n" + m.dump(r.sp().read(), 10) + "\n"
-				+ "Registers:\n" + r.dump() + "\n";
+				+ "Registers:\n" + r.dump() + "\n"
+				+ (skipInstruction ? "Skipping next instruction...\n" : "")
+				+ (speed > 0 ? "kHz: " + (speed / 1000) + "\n" : "");
 	}
 
 	public Accessor accessor(int resource){
@@ -363,12 +431,15 @@ public class DCPU16{
 			return new LiteralAccessor(resource & 0x1F);
 		}
 		else if (isNextWordMemory(resource)){
+			cycles++;
 			return m.accessor(nextWord().read());
 		}
 		else if (isNextWord(resource)){
+			cycles++;
 			return nextWord();
 		}
 		else if (isNextWordPlusRegisterMemory(resource)){
+			cycles++;
 			int next = nextWord().read();
 			switch (resource){
 				case 0x10:
