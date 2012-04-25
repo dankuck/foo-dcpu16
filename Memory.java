@@ -4,7 +4,7 @@ public class Memory{
 	private int pageCount;
 	private int pageSize = 0x100;
 	private int[][] pages;
-	private int mask = 0;
+	private int mask = 0xFFFFFFFF;
 
 	public Memory(int size){
 		pageCount = (size - 1) / pageSize + 1; // at least 1 page
@@ -31,7 +31,7 @@ public class Memory{
 			throw new RuntimeException("Attempt to write past end of emulated memory " + location + ".");
 		if (pages[page] == null)
 			pages[page] = new int[pageSize];
-		pages[page][location % pageSize] = mask != 0 ? value & mask : value;
+		pages[page][location % pageSize] = value & mask;
 	}
 
 	public void write(int start, int[] values){
@@ -45,7 +45,20 @@ public class Memory{
 			throw new RuntimeException("Attempt to read past end of emulated memory " + location + ".");
 		if (pages[page] == null)
 			return 0;
-		return mask != 0 ? pages[page][location % pageSize] & mask : pages[page][location % pageSize];
+		return pages[page][location % pageSize] & mask;
+	}
+
+	public int[] read(int start, int end){
+		if (start >= size())
+			start = size() - 1;
+		end = start + end;
+		if (end >= size())
+			end = size() - 1;
+		int[] bytes = new int[end - start];
+		int b = 0;
+		for (int i = start; i < end; i ++)
+			bytes[b++] = read(i);
+		return bytes;
 	}
 
 	public String dump(int start, int end){

@@ -301,7 +301,7 @@ public class DCPU16{
 	}
 
 	public String dump(){
-		return "Memory:\n" + m.dump(0, 10) + "\n"
+		return "Memory:\n" + m.dump(0, 10) + "...\n"
 				+ "Stack: " + Hexer.hex(r.sp().read()) + "\n" + m.dump(r.sp().read(), 10) + "\n"
 				+ "Registers:\n" + r.dump() + "\n";
 	}
