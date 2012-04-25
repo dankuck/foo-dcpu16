@@ -119,7 +119,7 @@ public class Harness{
 					d.step();
 					break;
 				case '7':
-					new Thread(screen = new DCPU16Screen(d.memory(), 0x8000)).start();
+					new Thread(screen = new DCPU16Screen(d.memory())).start();
 					watching = true;
 					if (isRunning(d))
 						say("Watching screen...");
