@@ -172,7 +172,7 @@ class Assembler{
 	private void lexize()
 		throws Exception
 	{
-		String contents = contents();
+		String contents = contents() + "\n"; // \n helps us make sure we get the last token
 		StringTokenizer tokens = new StringTokenizer(contents, ", \t\n\r\f\"\\", true);
 		boolean inComment = false;
 		String[][] lines = new String[contents.length()][];
@@ -281,6 +281,7 @@ class Assembler{
 			escapes.put('r', '\r');
 			escapes.put('t', '\t');
 			escapes.put('f', '\f');
+			escapes.put('0', '\0');
 			boolean escaping = false;
 			int[] string = new int[code.length()];
 			int currentChar = 0;
@@ -298,7 +299,8 @@ class Assembler{
 				}
 				string[currentChar++] = c;
 			}
-			string[currentChar++] = 0; // null-char delimited I assume.
+			// Looks like you have to null-char delimit your own strings if you want them null-char delimited
+			// string[currentChar++] = 0; // null-char delimited I assume.
 			int[] trimString = new int[currentChar];
 			System.arraycopy(string, 0, trimString, 0, currentChar);
 			return trimString;
