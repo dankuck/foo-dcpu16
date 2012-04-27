@@ -170,7 +170,7 @@ public class Memory{
 			System.out.println(m.read(location));
 		}
 		catch (Exception e){
-			System.out.println(e);
+			e.printStackTrace();
 		}
 	}
 
@@ -181,7 +181,7 @@ public class Memory{
 			System.out.println("wrote");
 		}
 		catch (Exception e){
-			System.out.println(e);
+			e.printStackTrace();
 		}
 	}
 

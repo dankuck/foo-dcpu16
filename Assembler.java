@@ -122,14 +122,14 @@ class Assembler{
 			arrayPart = label.substring(arrayStart + 1, label.length() - 1);
 			label = label.substring(0, arrayStart);
 		}
-		Integer line = labelsToLines.get(label);
+		Integer line = labelsToLines.get(label.toUpperCase());
 		if (line == null)
 			throw new Exception("Undefined label " + label);
 		Integer alignment = linesToBytes.get(line);
 		if (alignment == null)
 			throw new Exception("Label refers to non-existant line: " + label);
 		if (arrayPart != null)
-			return alignment + getExpression(arrayPart);
+			return alignment + interpretExpression(arrayPart);
 		return alignment;
 	}
 
@@ -138,14 +138,32 @@ class Assembler{
 		 		|| expression.matches("[0-9]+");
 	}
 
-	public int getExpression(String expression)
+	public int interpretNumber(String expression)
 		throws Exception
 	{
 		if (expression.matches("0x[0-9A-Fa-f]+"))
 			return Hexer.unhex(expression.substring(2));
 		if (expression.matches("[0-9]+"))
 			return Integer.parseInt(expression);
+		throw new Exception("Not a numeric expression: " + expression);
+	}
+
+	public int interpretExpression(String expression)
+		throws Exception
+	{
+		if (isNumericExpression(expression))
+			return interpretNumber(expression);
 		return labelToByte(expression);
+	}
+
+	private class ExpressionTree{
+
+		public String value;
+		public String operator;
+		public ExpressionTree parent;
+		public ExpressionTree left;
+		public ExpressionTree right;
+
 	}
 
 	private void alignBytes()
@@ -170,7 +188,7 @@ class Assembler{
 	}
 
 	private void addLabel(String label, int line){
-		labelsToLines.put(label, line);
+		labelsToLines.put(label.toUpperCase(), line);
 		ArrayList<String> labels = linesToLabels.get(line);
 		if (labels == null)
 			linesToLabels.put(line, labels = new ArrayList<String>());
@@ -275,7 +293,7 @@ class Assembler{
 				}
 				else if (isNumericExpression(line[i])){
 					int[] number = new int[1];
-					number[0] = getExpression(line[i]);
+					number[0] = interpretNumber(line[i]);
 					data[i - 1] = number;
 				}
 				else
@@ -443,7 +461,7 @@ class Assembler{
 		private int instructionByte()
 			throws Exception
 		{
-			Integer inst = instructionBytes.get(instruction);
+			Integer inst = instructionBytes.get(instruction.toUpperCase());
 			if (inst == null)
 				throw new Exception("Instruction not recognized " + instruction);
 			return inst;
@@ -538,7 +556,7 @@ class Assembler{
 				}
 				else{ // literal, but which kind?
 					if (isNumericExpression(data)){ // ignore tokens, they may not be aligned yet.
-						int literal = getExpression(data);
+						int literal = interpretNumber(data);
 						if (literal < 0x1F)
 							return literal + 0x20;
 					}
@@ -555,12 +573,12 @@ class Assembler{
 				if (toByte >= 0x10 && toByte <= 0x17){
 					String meat = data.substring(1, data.length() - 1);
 					int plus = meat.indexOf('+');
-					return getExpression(meat.substring(0, plus));
+					return interpretExpression(meat.substring(0, plus));
 				}
 				else if (toByte == 0x1E)
-					return getExpression(data.substring(1, data.length() - 1));
+					return interpretExpression(data.substring(1, data.length() - 1));
 				else if (toByte == 0x1F)
-					return getExpression(data);
+					return interpretExpression(data);
 				else
 					throw new Exception("I'm broken... I don't know what to do with my own toByte==" + Hexer.hex(toByte));
 			}

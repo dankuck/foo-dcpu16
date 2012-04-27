@@ -574,7 +574,7 @@ public class DCPU16{
 			d.run();
 		}
 		catch (Exception e){
-			System.out.println(e);
+			e.printStackTrace();
 		}
 		System.out.println(d.dump());
 	}
