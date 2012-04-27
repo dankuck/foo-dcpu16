@@ -105,7 +105,10 @@ public class Registers{
 	}
 
 	public static void main(String[] args){
-		System.out.println(A);
+		Registers r = new Registers();
+		r.sp().inc(1);
+		r.sp().inc(-1);
+		System.out.println(r.sp().read());
 	}
 
 }
