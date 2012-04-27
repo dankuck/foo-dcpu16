@@ -8,6 +8,10 @@ import java.awt.Font;
 import javax.swing.WindowConstants;
 import java.awt.event.*;
 
+import java.util.*;
+import java.io.*;
+
+
 class DCPU16Screen
 	extends JFrame
 	implements Runnable
@@ -109,22 +113,62 @@ class DCPU16Screen
 			lastBytes = bytes;
 		else
 			return false;
-		String horizontal = "+";
-		for (int i = 0; i < 32; i++)
-			horizontal += "=";
-		horizontal += "+";
-		String screen = /*horizontal + */"\n";
+		String screen = "";
 		for (int i = 0; i < bytes.length; i++){
-			//if (i % 32 == 0)
-			//	screen += "|";
+			if (i % 32 == 0)
+				screen += Hexer.hex(i / 32) + ": ";
 			char c = (char)(bytes[i] & 0xFF);
 			screen += c == 0 ? 0x20 : c;
 			if (i % 32 == 31)
-				screen += /*"|" + */"\n";
+				screen += "\n";
 		}
-		screen += /*horizontal + */"\n";
+		screen += "\n";
 		screenTextArea.setText(screen);
 		return true;
 	}
 
+	public static void main(String[] args){
+		if (args.length < 1){
+			System.out.println("Call me with a filename to run");
+			return;
+		}
+		final DCPU16 d = new DCPU16();
+		//d.setDebug(true);
+		d.setSpeed(100000);
+		loadFromFile(args[0], d.memory());
+		new Thread(new DCPU16Screen(d.memory())).start();
+		new Thread(new Runnable(){
+			public void run(){
+				synchronized(this){
+					while (true){
+						System.out.println(d.dump());
+						try{
+							wait(1000);
+						}
+						catch(InterruptedException e){}
+					}
+				}
+			}
+		}).start();
+		d.run();
+	}
+
+	private static void loadFromFile(String filename, Memory memory){
+		try{
+			File file = new File(filename);
+			FileInputStream reader = new FileInputStream(file);
+			byte[] octets = new byte[(int)file.length()];
+			reader.read(octets);
+			int[] sextets = new int[octets.length / 2];
+			for (int i = 0; i < sextets.length; i++)
+				sextets[i] = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
+			memory.write(0, sextets);
+		}
+		catch (FileNotFoundException e){
+			System.out.println("" + e);
+		}
+		catch (IOException e){
+			System.out.println("" + e);
+		}
+	}
 }
