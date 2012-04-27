@@ -460,10 +460,10 @@ public class DCPU16{
 			}
 		}
 		else if (isPop(resource)){
-			return m.accessor(popStack());
+			return new StackPopAccessor();
 		}
 		else if (isPush(resource)){
-			return m.accessor(pushStack());
+			return new StackPushAccessor();
 		}
 		throw new RuntimeException("We don't handle that kind of resource yet " + resource);
 	}
@@ -483,6 +483,46 @@ public class DCPU16{
 		int next = r.pc().read();
 		r.pc().inc();
 		return m.accessor(next);
+	}
+
+	public class StackPopAccessor implements Accessor{
+
+		Accessor a;
+
+		private Accessor a(){
+			if (a == null)
+				a = m.accessor(popStack());
+			return a;
+		}
+
+		public int read(){
+			return a().read();
+		}
+
+		public void write(int v){
+			a().write(v);
+		}
+
+	}
+
+	public class StackPushAccessor implements Accessor{
+
+		Accessor a;
+
+		private Accessor a(){
+			if (a == null)
+				a = m.accessor(pushStack());
+			return a;
+		}
+
+		public int read(){
+			return a().read();
+		}
+
+		public void write(int v){
+			a().write(v);
+		}
+
 	}
 
 	public class LiteralAccessor implements Accessor{
