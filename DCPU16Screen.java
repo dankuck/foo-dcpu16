@@ -20,21 +20,25 @@ class DCPU16Screen
 	static final long serialVersionUID = 1;
 
 	private Memory m;
-	private int beginning;
+	private int screenStart;
 	private boolean stop;
 	private boolean running;
 	private int[] lastBytes;
+	private int keyboardStart;
+	private int keyboardPosition = 0;
 
 	private JTextArea screenTextArea;
 
-	public DCPU16Screen(Memory memory, int beginning){
+	public DCPU16Screen(Memory memory, int screenStart, int keyboardStart){
 		this.m = memory;
-		this.beginning = beginning;
+		this.screenStart = screenStart;
+		this.keyboardStart = keyboardStart;
 	}
 
 	public DCPU16Screen(Memory memory){
 		this.m = memory;
-		this.beginning = 0x8000;
+		this.screenStart = 0x8000;
+		this.keyboardStart = 0x9000;
 	}
 
 	private void doShow(){
@@ -50,10 +54,20 @@ class DCPU16Screen
 		getContentPane().setLayout(thisLayout);
 		setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
 
+		KeyListener keyboard = new KeyListener(){
+			public void keyPressed(KeyEvent e){}
+			public void keyReleased(KeyEvent e){}
+			public void keyTyped(KeyEvent e){
+				queueKey(e.getKeyChar());
+			}
+		};
+		addKeyListener(keyboard);
+
 		{
 			screenTextArea = new JTextArea();
 			screenTextArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
 			screenTextArea.setEditable(false);
+			screenTextArea.addKeyListener(keyboard);
 		}
 		thisLayout.setVerticalGroup(thisLayout.createSequentialGroup()
 			.addComponent(screenTextArea, GroupLayout.PREFERRED_SIZE, 300, GroupLayout.PREFERRED_SIZE)
@@ -108,7 +122,7 @@ class DCPU16Screen
 	public boolean refresh(){
 		if (screenTextArea == null)
 			return false;
-		int[] bytes = m.read(beginning, 32 * 12);
+		int[] bytes = m.read(screenStart, 32 * 12);
 		if (lastBytes == null || ! sameBytes(bytes, lastBytes))
 			lastBytes = bytes;
 		else
@@ -127,13 +141,22 @@ class DCPU16Screen
 		return true;
 	}
 
+	private void queueKey(char k){
+		int location = keyboardStart + keyboardPosition;
+		if (m.read(location) != 0){
+			java.awt.Toolkit.getDefaultToolkit().beep();
+			return;
+		}
+		m.write(location, k);
+		keyboardPosition = (keyboardPosition + 1) & 0xF;
+	}
+
 	public static void main(String[] args){
 		if (args.length < 1){
 			System.out.println("Call me with a filename to run");
 			return;
 		}
 		final DCPU16 d = new DCPU16();
-		//d.setDebug(true);
 		d.setSpeed(100000);
 		loadFromFile(args[0], d.memory());
 		new Thread(new DCPU16Screen(d.memory())).start();
@@ -155,13 +178,24 @@ class DCPU16Screen
 			d.run();
 		}
 		catch (Exception e){
-			System.out.println(e);
+			e.printStackTrace();
 		}
 		stop[0] = true;
 		System.out.println(d.dump()); // take one last dump
 	}
 
 	private static void loadFromFile(String filename, Memory memory){
+		if (filename.matches(".*\\.asm")){
+			System.out.println("doing asm....");
+			Assembler a = new Assembler(filename);
+			try{
+				memory.write(0, a.assemble());
+			}
+			catch (Exception e){
+				e.printStackTrace();
+			}
+			return;
+		}
 		try{
 			File file = new File(filename);
 			FileInputStream reader = new FileInputStream(file);
@@ -173,10 +207,10 @@ class DCPU16Screen
 			memory.write(0, sextets);
 		}
 		catch (FileNotFoundException e){
-			System.out.println("" + e);
+			e.printStackTrace();
 		}
 		catch (IOException e){
-			System.out.println("" + e);
+			e.printStackTrace();
 		}
 	}
 }
