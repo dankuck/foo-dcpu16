@@ -11,6 +11,7 @@ public class DCPU16{
 	private long startTime = -1;
 	private long startCycles = -1;
 	private long cycles = 0;
+	private long hertzLimit = 0;
 
 	private boolean debugging = false;
 
@@ -47,21 +48,16 @@ public class DCPU16{
 			System.out.println(s);
 	}
 
-	/**
-	 * Calls run(0)
-	 */
-	public void run(){
-		run(0);
+	public void setSpeed(long hertzLimit){
+		this.hertzLimit = hertzLimit;
+		startTime = new java.util.Date().getTime();
+		startCycles = cycles;
 	}
 
 	/**
 	 * Runs step() in a loop until a crash or until some other thread calls stop().
-	 *
-	 * It also keeps track of the speed of execution for curiousity's sake and/or to limit speed.
-	 *
-	 * @param hertzLimit	if > 0, the loop will do wait() calls if hertz() exceeds this limit.
 	 */
-	public void run(long hertzLimit){
+	public void run(){
 		doStart();
 		synchronized(this){
 			while (true){
@@ -73,7 +69,7 @@ public class DCPU16{
 					step();
 					if (hertzLimit > 0 && hertz() > hertzLimit)
 						try{
-							wait(100);
+							wait(10);
 						}
 						catch (InterruptedException e){}
 				}
@@ -112,7 +108,8 @@ public class DCPU16{
 		long timePassed = new java.util.Date().getTime() - startTime;
 		if (timePassed == 0)
 			return cyclesPassed > 0 ? Double.POSITIVE_INFINITY : 0.0;
-		return 1000 * cyclesPassed / timePassed; // cycles / milliseconds => kHz, kHz * 1000 => hertz
+		else
+			return 1000 * cyclesPassed / timePassed; // cycles / milliseconds => kHz, kHz * 1000 => hertz
 	}
 
 	public void step(){
