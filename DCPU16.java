@@ -367,8 +367,7 @@ public class DCPU16{
 		return "Memory:\n" + m.dump(0, 10) + "...\n"
 				+ "Stack: " + Hexer.hex(r.sp().read()) + "\n" + m.dump(r.sp().read(), 10) + "\n"
 				+ "Registers:\n" + r.dump() + "\n"
-				+ (skipInstruction ? "Skipping next instruction...\n" : "")
-				+ (speed > 0 ? "kHz: " + (speed / 1000) + "\n" : "");
+				+ "Others: \nIF: " + (skipInstruction ? "0" : "1") + " Cycles: " + cycles + " Speed: " + (speed > 0 ? "kHz: " + (speed / 1000) : "") + "\n";
 	}
 
 	public Accessor accessor(int resource){
