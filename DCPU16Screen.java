@@ -137,10 +137,11 @@ class DCPU16Screen
 		d.setSpeed(100000);
 		loadFromFile(args[0], d.memory());
 		new Thread(new DCPU16Screen(d.memory())).start();
+		final boolean[] stop = new boolean[1];
 		new Thread(new Runnable(){
 			public void run(){
 				synchronized(this){
-					while (true){
+					while (! stop[0]){
 						System.out.println(d.dump());
 						try{
 							wait(1000);
@@ -150,7 +151,14 @@ class DCPU16Screen
 				}
 			}
 		}).start();
-		d.run();
+		try{
+			d.run();
+		}
+		catch (Exception e){
+			System.out.println(e);
+		}
+		stop[0] = true;
+		System.out.println(d.dump()); // take one last dump
 	}
 
 	private static void loadFromFile(String filename, Memory memory){
