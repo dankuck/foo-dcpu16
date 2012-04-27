@@ -52,18 +52,18 @@ class DCPU16Screen
 
 		{
 			screenTextArea = new JTextArea();
-			screenTextArea.setFont(new Font("Monospaced", Font.PLAIN, 10));
+			screenTextArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
 			screenTextArea.setEditable(false);
 		}
 		thisLayout.setVerticalGroup(thisLayout.createSequentialGroup()
-			.addComponent(screenTextArea, GroupLayout.PREFERRED_SIZE, 250, GroupLayout.PREFERRED_SIZE)
+			.addComponent(screenTextArea, GroupLayout.PREFERRED_SIZE, 300, GroupLayout.PREFERRED_SIZE)
 			);
 		thisLayout.setHorizontalGroup(thisLayout.createSequentialGroup()
-			    .addComponent(screenTextArea, GroupLayout.PREFERRED_SIZE, 250, GroupLayout.PREFERRED_SIZE)
+			    .addComponent(screenTextArea, GroupLayout.PREFERRED_SIZE, 300, GroupLayout.PREFERRED_SIZE)
 			    );
 
 		pack();
-		setSize(250, 250);
+		setSize(300, 300);
 		setLocationRelativeTo(null);
 		setVisible(true);
 
