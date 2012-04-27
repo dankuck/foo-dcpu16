@@ -168,10 +168,10 @@ public class Harness{
 			say("Loaded.");
 		}
 		catch (FileNotFoundException e){
-			say("" + e);
+			e.printStackTrace();
 		}
 		catch (IOException e){
-			say("" + e);
+			e.printStackTrace();
 		}
 	}
 
@@ -216,7 +216,9 @@ public class Harness{
 		while (location != 0x99) {
 			say(d.memory().dump(location, 80));
 			ask("Location (99 to quit) ");
-			location = Hexer.unhex(getChoice());
+			String newLocation = getChoice();
+			if (newLocation.length() > 0)
+				location = Hexer.unhex(newLocation);
 		}
 	}
 
@@ -225,7 +227,7 @@ public class Harness{
 			say("[ RUNNING ]");
 		Exception e = exceptions.get(d);
 		if (e != null)
-			say("Exception: " + e);
+			e.printStackTrace();
 		say(d.dump());
 	}
 
