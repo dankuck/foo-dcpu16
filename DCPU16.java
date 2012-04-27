@@ -28,7 +28,6 @@ public class DCPU16{
 		this.m = m;
 		m.setMask(0xFFFF);
 		r = new Registers();
-		r.write(r.SP, m.size() - 1);
 	}
 
 	public Memory memory(){

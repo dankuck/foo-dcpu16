@@ -199,7 +199,7 @@ public class Harness{
 		d.registers().accessor(Registers.Y).write(0);
 		d.registers().accessor(Registers.Z).write(0);
 		d.registers().accessor(Registers.PC).write(0);
-		d.registers().accessor(Registers.SP).write(d.memory().size() - 1);
+		d.registers().accessor(Registers.SP).write(0);
 		d.registers().accessor(Registers.O).write(0);
 	}
 
