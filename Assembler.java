@@ -116,12 +116,20 @@ class Assembler{
 	private int labelToByte(String label)
 		throws Exception
 	{
+		String arrayPart = null;
+		int arrayStart = label.indexOf('[');
+		if (arrayStart >= 0){
+			arrayPart = label.substring(arrayStart + 1, label.length() - 1);
+			label = label.substring(0, arrayStart);
+		}
 		Integer line = labelsToLines.get(label);
 		if (line == null)
 			throw new Exception("Undefined label " + label);
 		Integer alignment = linesToBytes.get(line);
 		if (alignment == null)
 			throw new Exception("Label refers to non-existant line: " + label);
+		if (arrayPart != null)
+			return alignment + getExpression(arrayPart);
 		return alignment;
 	}
 
@@ -173,7 +181,7 @@ class Assembler{
 		throws Exception
 	{
 		String contents = contents() + "\n"; // \n helps us make sure we get the last token
-		StringTokenizer tokens = new StringTokenizer(contents, ", \t\n\r\f\"\\", true);
+		StringTokenizer tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\", true);
 		boolean inComment = false;
 		String[][] lines = new String[contents.length()][];
 		int currentLine = 0;
@@ -282,6 +290,7 @@ class Assembler{
 			escapes.put('t', '\t');
 			escapes.put('f', '\f');
 			escapes.put('0', '\0');
+			escapes.put('b', '\b');
 			boolean escaping = false;
 			int[] string = new int[code.length()];
 			int currentChar = 0;
