@@ -16,11 +16,11 @@ public class Registers{
 	final static int O = 10;
 
 	public int read(int r){
-		return registers[r];
+		return registers[r] & 0xFFFF;
 	}
 
 	public void write(int r, int value){
-		registers[r] = value;
+		registers[r] = value & 0xFFFF;
 	}
 
 	public void inc(int r){
