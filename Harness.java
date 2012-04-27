@@ -78,28 +78,18 @@ public class Harness{
 	}
 
 	private void runDcpuMenu(DCPU16 d){
-		DCPU16Screen screen = null;
 		boolean watching = false;
 		while (true){
 			if (watching && isRunning(d)){
 				getChoice();
-				if (screen != null){
-					screen.stop();
-					screen = null;
-				}
-				else
-					d.setDebug(false);
+				d.setDebug(false);
 				watching = false;
 			}
 			showDcpu(d);
 			showDcpuMenu();
 			ask("Choose");
-			switch (getChoice().charAt(0)){
+			switch (getChoice().toUpperCase().charAt(0)){
 				case '0':
-					if (screen != null){
-						screen.stop();
-						screen = null;
-					}
 					return;
 				case '1':
 					toggleRunDcpu(d);
@@ -120,12 +110,7 @@ public class Harness{
 					d.step();
 					break;
 				case '7':
-					new Thread(screen = new DCPU16Screen(d.memory())).start();
-					watching = true;
-					if (isRunning(d))
-						say("Watching screen...");
-					else
-						say("Will watch screen when the DCPU starts...");
+					new Thread(new DCPU16Screen(d.memory())).start();
 					break;
 				case '8':
 					d.setDebug(true);
@@ -137,6 +122,12 @@ public class Harness{
 					break;
 				case '9':
 					loadFromFile(d.memory());
+					break;
+				case 'A':
+					ask("Set speed (kHz)");
+					int speed = getInteger();
+					d.setSpeed(speed * 1000);
+					say("Speed set.");
 					break;
 				case 'R':
 					break;
@@ -157,6 +148,7 @@ public class Harness{
 		say("7: Watch VRAM");
 		say("8: Watch Debug");
 		say("9: Load from file");
+		say("A: Set speed");
 		say("R: Refresh");
 	}
 
@@ -207,7 +199,7 @@ public class Harness{
 		d.registers().accessor(Registers.Y).write(0);
 		d.registers().accessor(Registers.Z).write(0);
 		d.registers().accessor(Registers.PC).write(0);
-		d.registers().accessor(Registers.SP).write(0);
+		d.registers().accessor(Registers.SP).write(d.memory().size() - 1);
 		d.registers().accessor(Registers.O).write(0);
 	}
 
@@ -247,7 +239,7 @@ public class Harness{
 			Thread t = new Thread(new Runnable(){
 				public void run(){
 					try{
-						d.run(100000); // max speed = 100 kHz
+						d.run();
 					}
 					catch (Exception e){
 						exceptions.put(d, e);
