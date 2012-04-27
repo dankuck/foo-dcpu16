@@ -44,16 +44,37 @@
 	SET A, [X]
 	IFE A, 0
 		SET PC, endprint
+	IFE A, 0xA ; \n
+		SET PC, print_newline
+	:print_char_literally
 	SET [B], A
-	ADD X, 1
 	ADD B, 1
-	IFE B, 0x8180
-		JSR scroll_screen
+	JSR check_scroll_screen
+	:done_char_print
+	ADD X, 1
 	SET PC, printloop
 	:endprint
 	SET [cursor_position], B
 	SET PC, POP
+	
+	:print_newline
+	SET [B], 0
+	ADD B, 1
+	JSR check_scroll_screen
+	SET A, B
+	MOD A, 0x20 ; 32 chars on line
+	IFE A, 0
+		SET PC, done_char_print
+	SET PC, print_newline
+	
+	:cursor_position
+	DAT 0x8000
 
+	:check_scroll_screen
+		IFE B, 0x8180
+			JSR scroll_screen
+		SET PC, POP
+	
 	:scroll_screen
 		SET B, 0x8160
 		SET I, 0x8000
@@ -71,13 +92,9 @@
 		SET PC, clear_bottom_line_loop
 	
 	
-	
 :crash
 	DAT 0x0000 ; causes chip to actually crash
 	; SET PC, crash ; Notch's favorite crash is to go into an infinite loop
 
 :string_to_print
 	DAT "Holy crap it worked! ", 0x0
-
-:cursor_position
-	DAT 0x8000
