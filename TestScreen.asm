@@ -17,8 +17,6 @@
 	ADD B, 1
 	IFE B, 0x8180
 		JSR scroll_screen
-	IFG B, 0x8180
-		SET PC, crash
 	SET PC, printloop
 :endprint
 	SET [cursor_position], B
