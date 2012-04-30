@@ -67,7 +67,7 @@ class MathExpression{
 								return right;
 							return new MathExpression(parse(s, 0, i), "+", right);
 						}
-						i += paren.length();
+						i += paren.length() - 1;
 						lastWasOperator = false;
 						continue;
 					}
@@ -125,8 +125,9 @@ class MathExpression{
 		}
 	}
 
-	private static boolean isMoreOperator(char c){
-		return c != '(' && c != '[' && isOperatorChar(c);
+	public static interface LabelInterpretter{
+
+		public Integer interpret(String label);
 	}
 
 	private static String[] operatorChars(){
@@ -190,7 +191,30 @@ class MathExpression{
 			isUnary = true;
 	}
 
+	public String value(){
+		return value;
+	}
+
+	public Integer numericValue(){
+		return numericValue;
+	}
+
+	public MathExpression left(){
+		return left;
+	}
+
+	public MathExpression right(){
+		return right;
+	}
+
+	public String operator(){
+		return operator;
+	}
+
 	public void simplify(){
+		simplify(null);
+	}
+	public void simplify(LabelInterpretter labels){
 		if (numericValue != null)
 			return; // looks like we already simplified
 		if (value != null){
@@ -198,12 +222,19 @@ class MathExpression{
 				numericValue = Integer.parseInt(value);
 			else if (value.matches("0x[\\dA-Fa-f]+"))
 				numericValue = Hexer.unhex(value.substring(2));
-			return; // simple as can be
+			else if (labels == null)
+				return; // simple as can be
+			else{
+				Integer realValue = labels.interpret(value);
+				if (realValue == null)
+					return;
+				numericValue = realValue;
+			}
 		}
 		if (left != null)
-			left.simplify();
+			left.simplify(labels);
 		if (right != null)
-			right.simplify();
+			right.simplify(labels);
 		if (operator == null) // dunno what this means
 			return;
 		if (right == null) // dunno what this means
@@ -298,19 +329,26 @@ class MathExpression{
 		}
 	}
 
+	public boolean isParenthesized(){
+		return isParenthesized;
+	}
+
 	private void convert(int number){
 		numericValue = number;
 		value = "" + numericValue;
 		left = null;
 		right = null;
 		operator = null;
-		isParenthesized = false;
 		isUnary = false;
 	}
 
 	public String toString(){
-		if (operator != null)
-			return "(" + (left == null ? "" : left + " ") + operator + " " + right + ")";
+		if (operator != null){
+			String str = (left == null ? "" : left + " ") + operator + " " + right;
+			//if (isParenthesized)
+				return "(" + str + ")";
+			//return str;
+		}
 		return value;
 	}
 
@@ -319,8 +357,10 @@ class MathExpression{
 	 */
 
 	public static void main(String[] args){
-		/*
+		//*
 		// Should work:
+		test("1 + 2");
+		test("1 + 2 + 3");
 		test("1 + 2 * 3");
 		test("!1");
 		test("1 + !2 * 3");
@@ -393,8 +433,9 @@ class MathExpression{
 		test("(100)");
 		test("(100 + 1)");
 		test("(100 + 1]"); // a known bug
+		test("(some_label+some_other_label)*100");
 		//*/
-		//*
+		/*
 		//Should fail
 		test("~");
 		test("~-");
@@ -406,6 +447,7 @@ class MathExpression{
 		test("hair()");
 		test("(7)gone");
 		test("*4");
+		test("4 4");
 		//*/
 	}
 
