@@ -4,6 +4,25 @@ import java.io.*;
 
 class Assembler{
 
+	static{
+		String[][] precedence = {
+									{ "@!", "@+", "@~", "@-" },
+									{ "*", "/", "%" },
+									{ "+", "-" },
+									{ "<<", ">>" },
+									{ "==", "!=", "<>" },	// per 0xSCA standards, == and the like are evaluated before <= and the like
+									{ "<=", "<", ">=", ">" },
+									{ "&" },
+									{ "^" },
+									{ "|" },
+									{ "&&" },
+									{ "||" },
+									{ "^^" }, // per 0xSCA standards, it's &, ^, |, but &&, ||, ^^
+									{ "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=" }
+								};
+		MathExpression.setPrecedence(precedence);
+	}
+
 	public static void main(String[] args)
 		throws Exception
 	{
@@ -27,9 +46,63 @@ class Assembler{
 	private HashMap<Integer, ArrayList<String>> linesToLabels = new HashMap<Integer, ArrayList<String>>();
 	private HashMap<Integer, AssembleStructure> structures = new HashMap<Integer, AssembleStructure>();
 	private HashMap<Integer, Integer> linesToBytes = new HashMap<Integer, Integer>();
+	private boolean labelsAligned = false;
 	private int[] program;
+	private HashMap<String, Integer> staticTransforms;
+	private HashMap<String, Integer> plusRegisters;
+	private ArrayList<String> registers;
+
+	private void init(){
+		if (registers == null){
+			String[] rs = { "A", "B", "C", "X", "Y", "Z", "I", "J", "SP", "PC", "O" };
+			registers = new ArrayList<String>();
+			for (int i = 0; i < rs.length; i++)
+				registers.add(rs[i]);
+		}
+		if (staticTransforms == null){
+			staticTransforms = new HashMap<String, Integer>();
+			staticTransforms.put("A", 0x0);
+			staticTransforms.put("B", 0x1);
+			staticTransforms.put("C", 0x2);
+			staticTransforms.put("X", 0x3);
+			staticTransforms.put("Y", 0x4);
+			staticTransforms.put("Z", 0x5);
+			staticTransforms.put("I", 0x6);
+			staticTransforms.put("J", 0x7);
+			staticTransforms.put("[A]", 0x8);
+			staticTransforms.put("[B]", 0x9);
+			staticTransforms.put("[C]", 0xA);
+			staticTransforms.put("[X]", 0xB);
+			staticTransforms.put("[Y]", 0xC);
+			staticTransforms.put("[Z]", 0xD);
+			staticTransforms.put("[I]", 0xE);
+			staticTransforms.put("[J]", 0xF);
+			staticTransforms.put("POP", 0x18);
+			staticTransforms.put("PEEK", 0x19);
+			staticTransforms.put("PUSH", 0x1A);
+			// aliases to the above
+				staticTransforms.put("[SP++]", 0x18);
+				staticTransforms.put("[SP]", 0x19);
+				staticTransforms.put("[--SP]", 0x1A);
+			staticTransforms.put("SP", 0x1B);
+			staticTransforms.put("PC", 0x1C);
+			staticTransforms.put("O", 0x1D);
+		}
+		if (plusRegisters == null){
+			plusRegisters = new HashMap<String, Integer>();
+			plusRegisters.put("A", 0x10);
+			plusRegisters.put("B", 0x11);
+			plusRegisters.put("C", 0x12);
+			plusRegisters.put("X", 0x13);
+			plusRegisters.put("Y", 0x14);
+			plusRegisters.put("Z", 0x15);
+			plusRegisters.put("I", 0x16);
+			plusRegisters.put("J", 0x17);
+		}
+	}
 
 	public Assembler(String filename){
+		init();
 		this.filename = filename;
 	}
 
@@ -116,20 +189,12 @@ class Assembler{
 	private int labelToByte(String label)
 		throws Exception
 	{
-		String arrayPart = null;
-		int arrayStart = label.indexOf('[');
-		if (arrayStart >= 0){
-			arrayPart = label.substring(arrayStart + 1, label.length() - 1);
-			label = label.substring(0, arrayStart);
-		}
 		Integer line = labelsToLines.get(label.toUpperCase());
 		if (line == null)
 			throw new Exception("Undefined label " + label);
 		Integer alignment = linesToBytes.get(line);
 		if (alignment == null)
 			throw new Exception("Label refers to non-existant line: " + label);
-		if (arrayPart != null)
-			return alignment + interpretExpression(arrayPart);
 		return alignment;
 	}
 
@@ -156,14 +221,35 @@ class Assembler{
 		return labelToByte(expression);
 	}
 
-	private class ExpressionTree{
-
-		public String value;
-		public String operator;
-		public ExpressionTree parent;
-		public ExpressionTree left;
-		public ExpressionTree right;
-
+	public MathExpression buildExpression(String string)
+		throws Exception
+	{
+		MathExpression exp = MathExpression.parse(string);
+		if (labelsAligned)
+			exp.simplify(new MathExpression.LabelInterpretter(){
+				public Integer interpret(String label){
+					if (registers.contains(label.toUpperCase()))
+						return null;
+					try{
+						return labelToByte(label);
+					}
+					catch(RuntimeException e){
+						throw e;
+					}
+					catch(Exception e){
+						throw new RuntimeException(e);
+					}
+				}
+			});
+		else
+			exp.simplify(/*new MathExpression.LabelInterpretter(){
+				public Integer interpret(String label){
+					if (plusRegisters.get(label) != null)
+						return null;
+					return 0xFFFF; // fills in
+				}
+			}*/);
+		return exp;
 	}
 
 	private void alignBytes()
@@ -174,6 +260,7 @@ class Assembler{
 			linesToBytes.put(i, alignment);
 			alignment += structures.get(i).length();
 		}
+		labelsAligned = true;
 	}
 
 	private void structurize()
@@ -242,10 +329,10 @@ class Assembler{
 					token += subtoken;
 				}
 			}
-			if (token.charAt(0) == ':'){
+			if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
 				if (currentToken > 0)
 					throw new Exception("Label not at beginning of line " + token);
-				addLabel(token.substring(1), currentLine);
+				addLabel(token.replaceAll("^:|:$", ""), currentLine);
 				continue;
 			}
 			if (currentToken == 0 && token.equalsIgnoreCase("DAT"))
@@ -480,55 +567,8 @@ class Assembler{
 
 			private String data;
 
-			private HashMap<String, Integer> staticTransforms;
-			private HashMap<String, Integer> plusRegisters;
-
-			private void staticInit(){
-				if (staticTransforms == null){
-					staticTransforms = new HashMap<String, Integer>();
-					staticTransforms.put("A", 0x0);
-					staticTransforms.put("B", 0x1);
-					staticTransforms.put("C", 0x2);
-					staticTransforms.put("X", 0x3);
-					staticTransforms.put("Y", 0x4);
-					staticTransforms.put("Z", 0x5);
-					staticTransforms.put("I", 0x6);
-					staticTransforms.put("J", 0x7);
-					staticTransforms.put("[A]", 0x8);
-					staticTransforms.put("[B]", 0x9);
-					staticTransforms.put("[C]", 0xA);
-					staticTransforms.put("[X]", 0xB);
-					staticTransforms.put("[Y]", 0xC);
-					staticTransforms.put("[Z]", 0xD);
-					staticTransforms.put("[I]", 0xE);
-					staticTransforms.put("[J]", 0xF);
-					staticTransforms.put("POP", 0x18);
-					staticTransforms.put("PEEK", 0x19);
-					staticTransforms.put("PUSH", 0x1A);
-					// aliases to the above
-						staticTransforms.put("[SP++]", 0x18);
-						staticTransforms.put("[SP]", 0x19);
-						staticTransforms.put("[--SP]", 0x1A);
-					staticTransforms.put("SP", 0x1B);
-					staticTransforms.put("PC", 0x1C);
-					staticTransforms.put("O", 0x1D);
-				}
-				if (plusRegisters == null){
-					plusRegisters = new HashMap<String, Integer>();
-					plusRegisters.put("A", 0x10);
-					plusRegisters.put("B", 0x11);
-					plusRegisters.put("C", 0x12);
-					plusRegisters.put("X", 0x13);
-					plusRegisters.put("Y", 0x14);
-					plusRegisters.put("Z", 0x15);
-					plusRegisters.put("I", 0x16);
-					plusRegisters.put("J", 0x17);
-				}
-			}
-
 			public AssembleInstructionData(String data){
-				staticInit();
-				this.data = data;
+				this.data = data.trim();
 			}
 
 			public String toString(){
@@ -541,27 +581,45 @@ class Assembler{
 				Integer easy = staticTransforms.get(data.toUpperCase());
 				if (easy != null)
 					return easy;
-				if (data.charAt(0) == '[' && data.charAt(data.length() - 1) == ']'){
-					String meat = data.substring(1, data.length() - 1);
-					int plus = meat.indexOf('+');
-					if (plus >= 0){
-						String register = meat.substring(plus + 1);
-						Integer plusRegister = plusRegisters.get(register.toUpperCase());
-						if (plusRegister == null)
-							throw new Exception("[identifier+register] refers to a bad register " + register);
-						return plusRegister;
+				MathExpression exp = buildExpression(data);
+				String register = findRegister(exp);
+				if (exp.isParenthesized() && data.charAt(0) == '['){
+					if (register != null){
+						Integer code = plusRegisters.get(register.toUpperCase());
+						if (code == null)
+							throw new Exception("Cannot use " + register + " in [register+literal] in: " + data + " => " + exp);
+						return code;
 					}
-					else
-						return 0x1E; // [next word]
+					return 0x1E;
 				}
-				else{ // literal, but which kind?
-					if (isNumericExpression(data)){ // ignore tokens, they may not be aligned yet.
-						int literal = interpretNumber(data);
-						if (literal < 0x1F)
-							return literal + 0x20;
+				else{
+					if (register != null){
+						if (exp.value() != null && exp.value().equalsIgnoreCase(register))
+							return staticTransforms.get(register.toUpperCase());
+						else
+							throw new Exception("Cannot use a register this way: " + data + " => " + exp);
 					}
-					return 0x1F; // just doing next word literals right now, no inline literals
+					if (exp.numericValue() != null && (exp.numericValue() & 0xFFFF) < 0x1F)
+						return exp.numericValue() + 0x20;
+					return 0x1F;
 				}
+			}
+
+			private String findRegister(MathExpression exp){
+				if (exp.value() != null && registers.contains(exp.value().toUpperCase())){
+					return exp.value().toUpperCase();
+				}
+				if (exp.left() != null){
+					String register = findRegister(exp.left());
+					if (register != null)
+						return register;
+				}
+				if (exp.right() != null){
+					String register = findRegister(exp.right());
+					if (register != null)
+						return register;
+				}
+				return null;
 			}
 
 			public int extraByte()
@@ -571,14 +629,34 @@ class Assembler{
 				if (! hasExtraByte())
 					throw new Exception("extraByte() requested but none is appropriate");
 				if (toByte >= 0x10 && toByte <= 0x17){
-					String meat = data.substring(1, data.length() - 1);
-					int plus = meat.indexOf('+');
-					return interpretExpression(meat.substring(0, plus));
+					MathExpression exp = buildExpression(data);
+					List<String> registers = exp.labels();
+					if (registers.size() != 1)
+						throw new Exception(registers.size() + " registers in expression: " + data + " => " + exp);
+					String register = registers.get(0);
+					exp.massageIntoCommutable(); // should turn x-y into x+-y
+					if (! exp.bringToTop(register))
+						throw new Exception("Couldn't re-arrange expression into [literal+register] format: " + data + " => " + exp);
+					if (exp.left() == null || exp.right() == null || ! "+".equals(exp.operator()))
+						throw new Exception("Bad expression in [literal+register]: " + data + " yields " + exp);
+					if (exp.left().value() != null && plusRegisters.get(exp.left().value().toUpperCase()) != null){
+						if (exp.right().numericValue() == null)
+							throw new Exception("Couldn't literalize " + exp.right() + " in " + data + " " + exp);
+						return exp.right().numericValue();
+					}
+					if (exp.right().value() != null && plusRegisters.get(exp.right().value().toUpperCase()) != null){
+						if (exp.left().numericValue() == null)
+							throw new Exception("Couldn't literalize " + exp.left() + " in " + data + " " + exp);
+						return exp.left().numericValue();
+					}
+					throw new Exception("Expression doesn't simplify to [literal+register] format: " + data + " => " + exp);
 				}
-				else if (toByte == 0x1E)
-					return interpretExpression(data.substring(1, data.length() - 1));
-				else if (toByte == 0x1F)
-					return interpretExpression(data);
+				else if (toByte == 0x1E || toByte == 0x1F){
+					MathExpression exp = buildExpression(data);
+					if (exp.numericValue() == null)
+						throw new Exception("Expression doesn't simplify to literal: " + data + " => " + exp);
+					return exp.numericValue();
+				}
 				else
 					throw new Exception("I'm broken... I don't know what to do with my own toByte==" + Hexer.hex(toByte));
 			}
