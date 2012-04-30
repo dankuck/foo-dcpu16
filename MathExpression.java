@@ -4,26 +4,38 @@
 * But if you're doing regular math problems, you don't care about that, because you'll never come across such a thing.
 */
 
+import java.util.*;
 
 class MathExpression{
 
 	private final static String UNARY = "unary";
-	private static String[][] precedents =
+	private static String[][] precedence =
 										{
 											{ "@!", "@+", "@~", "@-" },
 											{ "*", "/", "%" },
 											{ "+", "-" },
 											{ "<<", ">>" },
 											{ "<=", "<", ">=", ">" },
-											{ "==", "!=" },
+											{ "==", "!=", "<>" },
 											{ "&" },
 											{ "^" },
 											{ "|" },
 											{ "&&" },
+											{ "^^" },
 											{ "||" },
 											{ "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=" }
 										};
 	private static String[] operatorChars = null;
+	private static List<String> commutableOperators;
+	static {
+		commutableOperators = new ArrayList<String>();
+		commutableOperators.add("+");
+		commutableOperators.add("*");
+		commutableOperators.add("==");
+		commutableOperators.add("!=");
+		commutableOperators.add("<>");
+		// not including & or && because they shortcut
+	}
 
 	private MathExpression left = null;
 	private MathExpression right = null;
@@ -33,6 +45,11 @@ class MathExpression{
 	private boolean isParenthesized = false;
 	private boolean isUnary = false;
 
+	public static void setPrecedence(String[][] precedence){
+		MathExpression.precedence = precedence;
+		operatorChars = null;
+	}
+
 	public static MathExpression parse(String s){
 		return parse(s, 0, s.length());
 	}
@@ -41,55 +58,69 @@ class MathExpression{
 		try{
 			String s = sParent.substring(substringStart, substringEnd >= 0 ? substringEnd : sParent.length() + substringEnd);
 			boolean opsEncountered = false;
-			for (int p = precedents.length - 1; p >= 0; p--){
-				String[] group = precedents[p];
-				boolean lastWasOperator = true;
-				boolean noTokensYet = true;
-				boolean noOpsYet = true;
-				for (int i = 0; i < s.length(); i++){
+			for (int p = precedence.length - 1; p >= 0; p--){
+				String[] group = precedence[p];
+				for (int i = s.length() - 1; i >= 0; i--){
 					if (s.charAt(i) == ' ' || s.charAt(i) == '\t' || s.charAt(i) == '\n')
 						continue;
-					boolean isFirstToken = noTokensYet;
-					noTokensYet = false;
-					if (! isOperatorChar(s.charAt(i))){
-						lastWasOperator = false;
+					if (! isOperatorChar(s.charAt(i)))
 						continue;
-					}
-					boolean isFirstOp = noOpsYet;
-					noOpsYet = false;
 					opsEncountered = true;
-					if (s.charAt(i) == '(' || s.charAt(i) == '['){
-						String paren = grabParen(s.substring(i));
-						if (isFirstOp && s.substring(i + paren.length()).trim().length() == 0){
+					if (s.charAt(i) == ']' || s.charAt(i) == ')'){
+						String paren = grabParenReverse(s.substring(0, i + 1));
+						i -= paren.length() - 1;
+						String before = s.substring(0, i);
+						boolean isFirstOp = true;
+						for (int j = 0; j < i; j++)
+							if (isOperatorChar(s.charAt(j))){
+								isFirstOp = false;
+								break;
+							}
+						boolean isLastOp = true;
+						for (int j = i + paren.length(); j < s.length(); j++)
+							if (isOperatorChar(s.charAt(j))){
+								isLastOp = false;
+								break;
+							}
+						if (isFirstOp && isLastOp){
 							MathExpression right = parse(paren, 1, -1);
 							right.isParenthesized = true;
-							if (s.substring(0, i).trim().length() == 0)
+							if (before.trim().length() == 0)
 								return right;
 							return new MathExpression(parse(s, 0, i), "+", right);
 						}
-						i += paren.length() - 1;
-						lastWasOperator = false;
 						continue;
 					}
 					int start = i;
 					int end = i + 1;
-					for (; end < s.length() && isOperatorChar(s.charAt(end)); end++){}
-					for (;! isOp(s.substring(start, end)) && end > start; end--){}
+					for (; start > 0 && isOperatorChar(s.charAt(start)) && ! isParenthesis(s.charAt(start)); start--){}
+					if (! isOperatorChar(s.charAt(start)) || isParenthesis(s.charAt(start)))
+						start++;
+					for (;! isOp(s.substring(start, end)) && end > start; start++){}
 					String op = s.substring(start, end);
-					i = end - 1;
-					boolean isUnary = lastWasOperator;
-					lastWasOperator = true;
+					i = start;
+					boolean isUnary = true;
+					for (int j = i - 1; j >= 0; j--){
+						if (s.charAt(j) == ' ' || s.charAt(j) == '\t' || s.charAt(j) == '\n')
+							continue;
+						if (isOperatorChar(s.charAt(j)) && ! isParenthesis(s.charAt(j)))
+							break;
+						isUnary = false;
+						break;
+					}
+					if (isUnary && s.substring(0, start).trim().length() > 0)
+						continue;
 					String lookFor = isUnary ? "@" + op : op;
 					if (! inArray(lookFor, group))
 						continue;
-					MathExpression right = parse(s, i + 1, s.length());
-					if (isUnary && isFirstToken){
+					MathExpression right = parse(s, end, s.length());
+					if (isUnary && s.substring(0, start).trim().length() == 0){
 						if (right.value != null || right.isUnary || right.isParenthesized){ // then there is more to do on the right.
 							return new MathExpression(null, op, right);
 						}
 						continue;
 					}
-					// this is it. we want the left-most operator in the lowest group we can find
+					// this is it. we want the right-most operator in the lowest group we can find
 					return new MathExpression(parse(s, 0, start), op, right);
 				}
 			}
@@ -134,9 +165,9 @@ class MathExpression{
 		if (operatorChars != null)
 			return operatorChars;
 		String allOperators = "()[]";
-		for (int i = 0; i < precedents.length; i++)
-			for (int j = 0; j < precedents[i].length; j++)
-				allOperators += precedents[i][j];
+		for (int i = 0; i < precedence.length; i++)
+			for (int j = 0; j < precedence[i].length; j++)
+				allOperators += precedence[i][j];
 		operatorChars = new String[allOperators.length()];
 		for (int i = 0; i < allOperators.length(); i++)
 			operatorChars[i] = "" + allOperators.charAt(i);
@@ -145,6 +176,10 @@ class MathExpression{
 
 	private static boolean isOperatorChar(char c){
 		return inArray("" + c, operatorChars());
+	}
+
+	private static boolean isParenthesis(char c){
+		return c == '(' || c == ')' || c == '[' || c == ']';
 	}
 
 	private static boolean inArray(String n, String[] h){
@@ -169,10 +204,25 @@ class MathExpression{
 		throw new RuntimeException("Unclosed parentheses");
 	}
 
+	public static String grabParenReverse(String s){
+		int parens = 0;
+		if (s.charAt(s.length() - 1) != ')' && s.charAt(s.length() - 1) != ']')
+			throw new RuntimeException("Suppose to start string at first ')' or ']' for grabParensReverse: " + s);
+		for (int i = s.length() - 1; i >= 0; i--){
+			if (s.charAt(i) == ')' || s.charAt(i) == ']') // technically this allows people to mismatch () and []. a recursive design would protect against that.
+				parens++;
+			else if (s.charAt(i) == '(' || s.charAt(i) == '[')
+				parens--;
+			if (parens == 0)
+				return s.substring(i);
+		}
+		throw new RuntimeException("Unclosed parentheses");
+	}
+
 	private static boolean isOp(String op){
-		for (int i = 0; i < precedents.length; i++)
-			for (int j = 0; j < precedents[i].length; j++)
-				if (precedents[i][j].equals(op) || precedents[i][j].equals("@" + op))
+		for (int i = 0; i < precedence.length; i++)
+			for (int j = 0; j < precedence[i].length; j++)
+				if (precedence[i][j].equals(op) || precedence[i][j].equals("@" + op))
 					return true;
 		return false;
 	}
@@ -189,6 +239,9 @@ class MathExpression{
 		right = r;
 		if (left == null)
 			isUnary = true;
+	}
+
+	private MathExpression(){
 	}
 
 	public String value(){
@@ -315,12 +368,16 @@ class MathExpression{
 			convert(left.numericValue == right.numericValue ? 1 : 0);
 			return;
 		}
-		if (operator.equals("!=")){
+		if (operator.equals("!=") || operator.equals("<>")){
 			convert(left.numericValue != right.numericValue ? 1 : 0);
 			return;
 		}
 		if (operator.equals("&&")){
 			convert(left.numericValue != 0 && right.numericValue != 0 ? 1 : 0);
+			return;
+		}
+		if (operator.equals("^^")){ // java uses ^ for boolean-xor and integer-xor, depends on which type you're using
+			convert(((left.numericValue != 0) ^ (right.numericValue != 0)) ? 1 : 0);
 			return;
 		}
 		if (operator.equals("||")){
@@ -342,13 +399,152 @@ class MathExpression{
 		isUnary = false;
 	}
 
+	public List<String> labels(){
+		List<String> labels = new ArrayList<String>();
+		if (numericValue == null && value != null){
+			labels.add(value);
+			return labels;
+		}
+		if (left != null)
+			labels.addAll(left.labels());
+		if (right != null)
+			labels.addAll(right.labels());
+		return labels;
+	}
+
+	public int labelCount(String label){
+		if (value != null && value.equals(label))
+			return 1;
+		int count = 0;
+		if (right != null)
+			count += right.labelCount(label);
+		if (left != null)
+			count += left.labelCount(label);
+		return count;
+	}
+
+	public boolean bringToTop(String label){
+		if (label == null)
+			return false;
+		if (value != null){
+			if (value.equals(label))
+				return true;
+			return false;
+		}
+		if (labelCount(label) != 1)
+			return false;
+		if (right != null && label.equals(right.value))
+			return true;
+		if (left != null && label.equals(left.value))
+			return true;
+		massageIntoCommutable();
+		if (! commutable())
+			return false;
+		if (right != null && right.labelCount(label) == 1){
+			if (! samePrecedence(operator, right.operator))
+				return false;
+			if (! right.bringToTop(label))
+				return false;
+			if (label.equals(right.right.value)){
+				if (! right.commutable())
+					return false;
+				MathExpression temp = left;
+				left = right.right;
+				right.right = temp;
+				simplify();
+				return true;
+			}
+			else if (label.equals(right.left.value)){
+				MathExpression temp = left;
+				left = right.left;
+				right.left = temp;
+				simplify();
+				return true;
+			}
+			throw new RuntimeException("I'm broken...");
+		}
+		if (left != null && left.labelCount(label) == 1){
+			if (! samePrecedence(operator, left.operator))
+				return false;
+			if (! left.bringToTop(label))
+				return false;
+			if (label.equals(left.right.value)){
+				if (! left.commutable())
+					return false;
+				MathExpression temp = right;
+				right = left.right;
+				left.right = temp;
+				simplify();
+				return true;
+			}
+			else if (label.equals(left.left.value)){
+				MathExpression temp = right;
+				right = left.left;
+				left.left = temp;
+				simplify();
+				return true;
+			}
+			throw new RuntimeException("I'm broken...");
+		}
+		return false; // never get here because of the labelCount(label) line above
+	}
+
+	public void massageIntoCommutable(){
+		if (commutable())
+			return;
+		if ("/".equals(operator)){
+			right = new MathExpression(new MathExpression("1"), "/", right);
+			operator = "*";
+		}
+		else if ("-".equals(operator)){
+			right = new MathExpression(null, "-", right);
+			operator = "+";
+		}
+		else
+			return;
+		simplify();
+	}
+
+	public boolean commutable(){
+		if (operator == null)
+			throw new RuntimeException("I'm broken...");
+		return commutableOperators.contains(operator);
+	}
+
+	private boolean samePrecedence(String op1, String op2){
+		if (op1 == null || op2 == null)
+			throw new RuntimeException("I'm broken..." + op1 + " " + op2);
+		for (int i = 0; i < precedence.length; i++)
+			if (inArray(op1, precedence[i]) || inArray("@" + op1, precedence[i]))
+				return inArray(op2, precedence[i]) || inArray("@" + op2, precedence[i]);
+		return false;
+	}
+
+	public MathExpression clone(){
+		MathExpression exp = new MathExpression();
+		exp.left = left == null ? null : left.clone();
+		exp.right = right == null ? null : right.clone();
+		exp.operator = operator;
+		exp.value = value;
+		exp.numericValue = numericValue;
+		exp.isParenthesized = isParenthesized;
+		exp.isUnary = isUnary;
+		return exp;
+	}
+
 	public String toString(){
+		return toString(true);
+	}
+
+	public String toString(boolean addParentheses){
 		if (operator != null){
 			String str = (left == null ? "" : left + " ") + operator + " " + right;
-			//if (isParenthesized)
+			if (addParentheses || isParenthesized)
 				return "(" + str + ")";
-			//return str;
+			return str;
 		}
+		if (numericValue != null)
+			return numericValue + "";
 		return value;
 	}
 
@@ -357,8 +553,31 @@ class MathExpression{
 	 */
 
 	public static void main(String[] args){
+		// should succeed
+		testc("A+B+C", "A");
+		testc("(A+B)+C", "A");
+		testc("A+(B+C)", "A");
+		testc("B+A+C", "A");
+		testc("B+C+A", "A");
+		testc("A-B+C", "A");
+		testc("A+B+-C", "A");
+		testc("A+B-C", "A");
+		testc("A*B*C", "A");
+		testc("B*A*C", "A");
+		testc("A/B*C", "A");
+		testc("A*B/C", "A");
+		testc("A*B/(C*D)", "A");
+		// should fail
+		testc("A+B+C+A", "A");
+		testc("B+C", "A");
+		testc("B/A*C", "A");
+
+		/*
 		//*
 		// Should work:
+		test("(some_label+some_other_label)*100");
+		//*
+		test("!!2");
 		test("1 + 2");
 		test("1 + 2 + 3");
 		test("1 + 2 * 3");
@@ -433,7 +652,6 @@ class MathExpression{
 		test("(100)");
 		test("(100 + 1)");
 		test("(100 + 1]"); // a known bug
-		test("(some_label+some_other_label)*100");
 		//*/
 		/*
 		//Should fail
@@ -449,6 +667,15 @@ class MathExpression{
 		test("*4");
 		test("4 4");
 		//*/
+	}
+
+	public static void testc(String expression, String label){
+		MathExpression exp = parse(expression);
+		System.out.println(expression);
+		System.out.println(exp);
+		System.out.println(exp.bringToTop(label) ? "Brought " + label + " to top" : "Couldn't bring " + label + " to top");
+		System.out.println(exp);
+		System.out.println();
 	}
 
 	public static void test(String s){
