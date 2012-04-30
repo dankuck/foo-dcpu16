@@ -41,7 +41,7 @@ class Assembler{
 	}
 
 	private String filename;
-	private String[][] lines;
+	private List<List <String>> lines;
 	private HashMap<String, Integer> labelsToLines = new HashMap<String, Integer>();
 	private HashMap<Integer, ArrayList<String>> linesToLabels = new HashMap<Integer, ArrayList<String>>();
 	private HashMap<Integer, AssembleStructure> structures = new HashMap<Integer, AssembleStructure>();
@@ -51,6 +51,8 @@ class Assembler{
 	private HashMap<String, Integer> staticTransforms;
 	private HashMap<String, Integer> plusRegisters;
 	private ArrayList<String> registers;
+	private Assembler.Includer bracketIncluder = new Assembler.StringIncluder();
+	private Assembler.Includer stringIncluder = new Assembler.StringIncluder();
 
 	private void init(){
 		if (registers == null){
@@ -106,6 +108,19 @@ class Assembler{
 		this.filename = filename;
 	}
 
+	private interface Includer{
+
+		public String pathTo(String filename);
+
+	}
+
+	private class StringIncluder implements Includer{
+
+		public String pathTo(String filename){
+			return filename;
+		}
+	}
+
 	private String contents()
 		throws Exception
 	{
@@ -148,12 +163,16 @@ class Assembler{
 		return program;
 	}
 
+	public void setIncluder(Assembler.Includer includer){
+		this.bracketIncluder = includer;
+	}
+
 	private void programize()
 		throws Exception
 	{
 		program = new int[length()];
 		int position = 0;
-		for (int i = 0; i < lines.length; i++){
+		for (int i = 0; i < lines.size(); i++){
 			AssembleStructure s = structures.get(i);
 			System.arraycopy(s.toBytes(), 0, program, position, s.length());
 			position += s.length();
@@ -165,7 +184,7 @@ class Assembler{
 		throws Exception
 	{
 		int length = 0;
-		for (int i = 0; i < lines.length; i++)
+		for (int i = 0; i < lines.size(); i++)
 			length += structures.get(i).length();
 		return length;
 	}
@@ -173,7 +192,7 @@ class Assembler{
 	private void showStructure()
 		throws Exception
 	{
-		for (int i = 0; i < lines.length; i++){
+		for (int i = 0; i < lines.size(); i++){
 			AssembleStructure s = structures.get(i);
 			System.out.println(s + " ; " + s.length() + " " + Hexer.hexArray(s.toBytes()));
 		}
@@ -230,6 +249,8 @@ class Assembler{
 				public Integer interpret(String label){
 					if (registers.contains(label.toUpperCase()))
 						return null;
+					if (label.matches("'.'"))
+						return (int)label.charAt(1);
 					try{
 						return labelToByte(label);
 					}
@@ -242,13 +263,7 @@ class Assembler{
 				}
 			});
 		else
-			exp.simplify(/*new MathExpression.LabelInterpretter(){
-				public Integer interpret(String label){
-					if (plusRegisters.get(label) != null)
-						return null;
-					return 0xFFFF; // fills in
-				}
-			}*/);
+			exp.simplify();
 		return exp;
 	}
 
@@ -266,11 +281,11 @@ class Assembler{
 	private void structurize()
 		throws Exception
 	{
-		for (int i = 0; i < lines.length; i++){
-			if (lines[i][0].equalsIgnoreCase("DAT"))
-				structures.put(i, new AssembleData(lines[i]));
+		for (int i = 0; i < lines.size(); i++){
+			if (lines.get(i).get(0).equalsIgnoreCase("DAT"))
+				structures.put(i, new AssembleData((String[])lines.get(i).toArray()));
 			else
-				structures.put(i, new AssembleInstruction(lines[i]));
+				structures.put(i, new AssembleInstruction((String[])lines.get(i).toArray()));
 		}
 	}
 
@@ -288,19 +303,16 @@ class Assembler{
 		String contents = contents() + "\n"; // \n helps us make sure we get the last token
 		StringTokenizer tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\", true);
 		boolean inComment = false;
-		String[][] lines = new String[contents.length()][];
-		int currentLine = 0;
-		String[] line = new String[3];
-		int currentToken = 0;
+		lines = new ArrayList<List<String>>();
+		List<String> line = new ArrayList<String>();
+		int expectedLength = 3;
 		while (tokens.hasMoreTokens()){
 			String token = tokens.nextToken();
 			if (token.equals("\n")){
-				if (currentToken > 0){
-					String[] trimLine = new String[currentToken];
-					System.arraycopy(line, 0, trimLine, 0, currentToken);
-					lines[currentLine++] = trimLine;
-					currentToken = 0;
-					line = new String[3];
+				if (line.size() > 0){
+					lines.add(line);
+					line = new ArrayList<String>();
+					expectedLength = 3;
 				}
 				inComment = false;
 				continue;
@@ -330,23 +342,22 @@ class Assembler{
 				}
 			}
 			if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
-				if (currentToken > 0)
+				if (line.size() > 0)
 					throw new Exception("Label not at beginning of line " + token);
-				addLabel(token.replaceAll("^:|:$", ""), currentLine);
+				addLabel(token.replaceAll("^:|:$", ""), lines.size());
 				continue;
 			}
-			if (currentToken == 0 && token.equalsIgnoreCase("DAT"))
-				line = new String[tokens.countTokens()];
-			if (currentToken >= line.length)
-				throw new Exception("Too many tokens on line " + currentLine + ": " + joinLine(line) + ", " + line);
-			line[currentToken++] = token;
+			if (line.size() == 0 && token.equalsIgnoreCase("DAT")){
+				line = new ArrayList<String>();
+				expectedLength = tokens.countTokens();
+			}
+			if (line.size() >= expectedLength)
+				throw new Exception("Too many tokens on line " + lines.size() + ": " + joinLine(line) + ", " + line);
+			line.add(token);
 		}
-		String[][] trimLines = new String[currentLine][];
-		System.arraycopy(lines, 0, trimLines, 0, currentLine);
-		this.lines = trimLines;
 	}
 
-	public String joinLine(String[] line){
+	public String joinLine(List<String> line){
 		String str = "";
 		for (String token : line)
 			str += token + " ";
