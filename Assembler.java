@@ -359,7 +359,7 @@ class Assembler{
 				String preprocessor = line.get(0).replaceAll("^#|^\\.", "");
 				if (ifstack.size() > 0){
 					boolean skippingLines = ! ifstack.get(ifstack.size() - 1);
-					boolean isIfRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("end")|| preprocessor.equals("ifdef")|| preprocessor.equals("ifndef"));
+					boolean isIfRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("end") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef"));
 					if (skippingLines && ! isIfRelated){
 						line = new ArrayList<String>();
 						continue;
@@ -434,6 +434,8 @@ class Assembler{
 							line = new ArrayList<String>();
 							continue;
 						}
+						if (line.size() != 2)
+							throw new Exception("Wrong token count: " + joinLine(line));
 						String eval = line.get(1);
 						if (preprocessor.equalsIgnoreCase("ifdef"))
 							eval = "isdef(" + eval + ")";
@@ -453,15 +455,18 @@ class Assembler{
 							throw new Exception(preprocessor + " in wrong context");
 						if (ifskiprest.get(ifskiprest.size() - 1)){
 							ifstack.set(ifstack.size() - 1, false);
+							line = new ArrayList<String>();
 							continue;
 						}
+						if (line.size() != 2)
+							throw new Exception("Wrong token count: " + joinLine(line));
 						String eval = line.get(1);
 						MathExpression exp = buildExpression(eval);
 						if (exp.numericValue() == null)
 							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
 						boolean result = exp.numericValue() != 0;
 						ifstack.set(ifstack.size() - 1, result);
-						ifskiprest.add(ifstack.size() - 1, result);
+						ifskiprest.set(ifstack.size() - 1, result);
 						line = new ArrayList<String>();
 						continue;
 					}
@@ -470,10 +475,11 @@ class Assembler{
 							throw new Exception(preprocessor + " in wrong context");
 						if (ifskiprest.get(ifskiprest.size() - 1)){
 							ifstack.set(ifstack.size() - 1, false);
+							line = new ArrayList<String>();
 							continue;
 						}
 						ifstack.set(ifstack.size() - 1, true);
-						ifskiprest.add(ifstack.size() - 1, true);
+						ifskiprest.set(ifstack.size() - 1, true);
 						line = new ArrayList<String>();
 						continue;
 					}
