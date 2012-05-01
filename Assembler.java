@@ -157,8 +157,8 @@ class Assembler{
 		lexize();
 		structurize();
 		alignBytes();
-		//showLabelAlignment();
-		//showStructure();
+		showLabelAlignment();
+		showStructure();
 		programize();
 		return program;
 	}
@@ -194,7 +194,7 @@ class Assembler{
 	{
 		for (int i = 0; i < lines.size(); i++){
 			AssembleStructure s = structures.get(i);
-			System.out.println(s + " ; " + s.length() + " " + Hexer.hexArray(s.toBytes()));
+			System.out.println(s + " ; " + s.length() + " byte(s) ; " + Hexer.hexArray(s.toBytes()) + " ; " + s.toHexParts());
 		}
 	}
 
@@ -202,7 +202,7 @@ class Assembler{
 		throws Exception
 	{
 		for (String label : labelsToLines.keySet())
-			System.out.println(label + " " + labelToByte(label));
+			System.out.println(label + " " + Hexer.hex(labelToByte(label)));
 	}
 
 	private int labelToByte(String label)
@@ -282,10 +282,13 @@ class Assembler{
 		throws Exception
 	{
 		for (int i = 0; i < lines.size(); i++){
+			String[] t = new String[lines.get(i).size()];
+			lines.get(i).toArray(t);
 			if (lines.get(i).get(0).equalsIgnoreCase("DAT"))
-				structures.put(i, new AssembleData((String[])lines.get(i).toArray()));
-			else
-				structures.put(i, new AssembleInstruction((String[])lines.get(i).toArray()));
+				structures.put(i, new AssembleData(t));
+			else{
+				structures.put(i, new AssembleInstruction(t));
+			}
 		}
 	}
 
@@ -305,14 +308,18 @@ class Assembler{
 		boolean inComment = false;
 		lines = new ArrayList<List<String>>();
 		List<String> line = new ArrayList<String>();
-		int expectedLength = 3;
 		while (tokens.hasMoreTokens()){
 			String token = tokens.nextToken();
 			if (token.equals("\n")){
 				if (line.size() > 0){
+					if (line.get(0).toUpperCase().equals("DAT")){
+						// any size is fine
+					}
+					else if (line.size() > 3){
+						throw new Exception("Too many tokens on line " + lines.size() + ": " + joinLine(line) + ", " + line);
+					}
 					lines.add(line);
 					line = new ArrayList<String>();
-					expectedLength = 3;
 				}
 				inComment = false;
 				continue;
@@ -349,10 +356,7 @@ class Assembler{
 			}
 			if (line.size() == 0 && token.equalsIgnoreCase("DAT")){
 				line = new ArrayList<String>();
-				expectedLength = tokens.countTokens();
 			}
-			if (line.size() >= expectedLength)
-				throw new Exception("Too many tokens on line " + lines.size() + ": " + joinLine(line) + ", " + line);
 			line.add(token);
 		}
 	}
@@ -577,6 +581,7 @@ class Assembler{
 		public class AssembleInstructionData{
 
 			private String data;
+			private Integer toByte;
 
 			public AssembleInstructionData(String data){
 				this.data = data.trim();
@@ -589,9 +594,11 @@ class Assembler{
 			public int toByte()
 				throws Exception
 			{
+				if (toByte != null)
+					return toByte;
 				Integer easy = staticTransforms.get(data.toUpperCase());
 				if (easy != null)
-					return easy;
+					return toByte = easy;
 				MathExpression exp = buildExpression(data);
 				String register = findRegister(exp);
 				if (exp.isParenthesized() && data.charAt(0) == '['){
@@ -599,20 +606,22 @@ class Assembler{
 						Integer code = plusRegisters.get(register.toUpperCase());
 						if (code == null)
 							throw new Exception("Cannot use " + register + " in [register+literal] in: " + data + " => " + exp);
-						return code;
+						return toByte = code;
 					}
-					return 0x1E;
+					return toByte = 0x1E;
 				}
 				else{
 					if (register != null){
 						if (exp.value() != null && exp.value().equalsIgnoreCase(register))
-							return staticTransforms.get(register.toUpperCase());
+							return toByte = staticTransforms.get(register.toUpperCase());
 						else
 							throw new Exception("Cannot use a register this way: " + data + " => " + exp);
 					}
+					/* the program jumps around a bit making this occassionally produce errors. just use extraByte literals for now
 					if (exp.numericValue() != null && (exp.numericValue() & 0xFFFF) < 0x1F)
-						return exp.numericValue() + 0x20;
-					return 0x1F;
+						return toByte = exp.numericValue() + 0x20;
+					*/
+					return toByte = 0x1F;
 				}
 			}
 
