@@ -69,25 +69,31 @@ class MathExpression{
 					if (s.charAt(i) == ']' || s.charAt(i) == ')'){
 						String paren = grabParenReverse(s.substring(0, i + 1));
 						i -= paren.length() - 1;
-						String before = s.substring(0, i);
+						String pairedWith = "";
 						boolean isFirstOp = true;
-						for (int j = 0; j < i; j++)
-							if (isOperatorChar(s.charAt(j))){
+						for (int j = i - 1; j >= 0; j--){
+							if (! isOperatorChar(s.charAt(j)))
+								pairedWith = s.charAt(j) + pairedWith;
+							else{
 								isFirstOp = false;
 								break;
 							}
+						}
 						boolean isLastOp = true;
 						for (int j = i + paren.length(); j < s.length(); j++)
 							if (isOperatorChar(s.charAt(j))){
 								isLastOp = false;
 								break;
 							}
+						i -= pairedWith.length();
 						if (isFirstOp && isLastOp){
 							MathExpression right = parse(paren, 1, -1);
 							right.isParenthesized = true;
-							if (before.trim().length() == 0)
+							if (pairedWith.trim().length() == 0)
 								return right;
-							return new MathExpression(parse(s, 0, i), "+", right);
+							MathExpression exp = new MathExpression(parse(pairedWith.trim()), paren.charAt(0) == '[' ? "+" : "call", right);
+							exp.isParenthesized = true; // causes other parts of the program to treat this as an unbreakable unit
+							return exp;
 						}
 						continue;
 					}
@@ -114,10 +120,9 @@ class MathExpression{
 					if (! inArray(lookFor, group))
 						continue;
 					MathExpression right = parse(s, end, s.length());
-					if (isUnary && s.substring(0, start).trim().length() == 0){
-						if (right.value != null || right.isUnary || right.isParenthesized){ // then there is more to do on the right.
+					if (isUnary){
+						if (right.value != null || right.isUnary || right.isParenthesized)
 							return new MathExpression(null, op, right);
-						}
 						continue;
 					}
 					// this is it. we want the right-most operator in the lowest group we can find
@@ -159,6 +164,7 @@ class MathExpression{
 	public static interface LabelInterpretter{
 
 		public Integer interpret(String label);
+		public Integer call(String label, MathExpression input);
 	}
 
 	private static String[] operatorChars(){
@@ -279,9 +285,9 @@ class MathExpression{
 				return; // simple as can be
 			else{
 				Integer realValue = labels.interpret(value);
-				if (realValue == null)
-					return;
-				numericValue = realValue;
+				if (realValue != null)
+					numericValue = realValue;
+				return;
 			}
 		}
 		if (left != null)
@@ -309,6 +315,12 @@ class MathExpression{
 					convert(~ right.numericValue);
 					return;
 			}
+			return;
+		}
+		if (operator.equals("call") && labels != null){
+			Integer callResult = labels.call(left.value, right);
+			if (callResult != null)
+				convert(callResult);
 			return;
 		}
 		if (left.numericValue == null || right.numericValue == null)
@@ -538,14 +550,14 @@ class MathExpression{
 
 	public String toString(boolean addParentheses){
 		if (operator != null){
-			String str = (left == null ? "" : left + " ") + operator + " " + right;
+			String str = (left == null ? "" : left + " ") + (operator.equals("call") ? "" : operator) + " " + right;
 			if (addParentheses || isParenthesized)
 				return "(" + str + ")";
 			return str;
 		}
 		if (numericValue != null)
 			return numericValue + "";
-		return value;
+		return isParenthesized ? "(" + value + ")" : value;
 	}
 
 	/********************
@@ -553,6 +565,7 @@ class MathExpression{
 	 */
 
 	public static void main(String[] args){
+		/*
 		// should succeed
 		testc("A+B+C", "A");
 		testc("(A+B)+C", "A");
@@ -571,8 +584,8 @@ class MathExpression{
 		testc("A+B+C+A", "A");
 		testc("B+C", "A");
 		testc("B/A*C", "A");
+		//*/
 
-		/*
 		//*
 		// Should work:
 		test("(some_label+some_other_label)*100");
