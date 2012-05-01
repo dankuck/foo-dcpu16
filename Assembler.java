@@ -43,7 +43,6 @@ class Assembler{
 	private String filename;
 	private List<List <String>> lines;
 	private HashMap<String, Integer> labelsToLines = new HashMap<String, Integer>();
-	private HashMap<Integer, ArrayList<String>> linesToLabels = new HashMap<Integer, ArrayList<String>>();
 	private HashMap<Integer, AssembleStructure> structures = new HashMap<Integer, AssembleStructure>();
 	private HashMap<Integer, Integer> linesToBytes = new HashMap<Integer, Integer>();
 	private boolean labelsAligned = false;
@@ -53,6 +52,7 @@ class Assembler{
 	private ArrayList<String> registers;
 	private Assembler.Includer bracketIncluder = new Assembler.StringIncluder();
 	private Assembler.Includer stringIncluder = new Assembler.StringIncluder();
+	private HashMap<String, Integer> definitions = new HashMap<String, Integer>();
 
 	private void init(){
 		if (registers == null){
@@ -131,6 +131,16 @@ class Assembler{
 		return new String(stringChars);
 	}
 
+	private String contents(String filename)
+		throws Exception
+	{
+		File file = new File(filename);
+		FileReader reader = new FileReader(file);
+		char[] stringChars = new char[(int)file.length()];
+		reader.read(stringChars, 0, stringChars.length);
+		return new String(stringChars);
+	}
+
 	public String assembleToHex()
 		throws Exception
 	{
@@ -194,7 +204,7 @@ class Assembler{
 	{
 		for (int i = 0; i < lines.size(); i++){
 			AssembleStructure s = structures.get(i);
-			System.out.println(s + " ; " + s.length() + " byte(s) ; " + Hexer.hexArray(s.toBytes()) + " ; " + s.toHexParts());
+			System.out.println(s + " ; " + s.length() + " byte(s) ; " + (labelsAligned ? Hexer.hexArray(s.toBytes()) + " ; " + s.toHexParts() : ""));
 		}
 	}
 
@@ -244,26 +254,34 @@ class Assembler{
 		throws Exception
 	{
 		MathExpression exp = MathExpression.parse(string);
-		if (labelsAligned)
-			exp.simplify(new MathExpression.LabelInterpretter(){
-				public Integer interpret(String label){
-					if (registers.contains(label.toUpperCase()))
-						return null;
-					if (label.matches("'.'"))
-						return (int)label.charAt(1);
-					try{
-						return labelToByte(label);
-					}
-					catch(RuntimeException e){
-						throw e;
-					}
-					catch(Exception e){
-						throw new RuntimeException(e);
-					}
+		exp.simplify(new MathExpression.LabelInterpretter(){
+			public Integer interpret(String label){
+				if (registers.contains(label.toUpperCase()))
+					return null;
+				if (label.matches("'.'"))
+					return (int)label.charAt(1);
+				Integer defined = definitions.get(label.toUpperCase());
+				if (defined != null)
+					return defined;
+				if (! labelsAligned)
+					return null;
+				try{
+					return labelToByte(label);
 				}
-			});
-		else
-			exp.simplify();
+				catch(RuntimeException e){
+					throw e;
+				}
+				catch(Exception e){
+					throw new RuntimeException(e);
+				}
+			}
+			public Integer call(String label, MathExpression input){
+				if (label.equalsIgnoreCase("isdef"))
+					return definitions.get(input.value().toUpperCase()) != null || labelsToLines.get(input.value().toUpperCase()) != null ? 1 : 0;
+				else
+					return null;
+			}
+		});
 		return exp;
 	}
 
@@ -292,47 +310,217 @@ class Assembler{
 		}
 	}
 
-	private void addLabel(String label, int line){
+	private void addLabel(String label, int line)
+		throws Exception
+	{
+		if (definitions.get(label.toUpperCase()) != null)
+			throw new Exception("Cannot redefine " + label + ". Undefine it first.");
 		labelsToLines.put(label.toUpperCase(), line);
-		ArrayList<String> labels = linesToLabels.get(line);
-		if (labels == null)
-			linesToLabels.put(line, labels = new ArrayList<String>());
-		labels.add(label);
+	}
+
+	private void addDefinition(String name, int value){
+		definitions.put(name.toUpperCase(), value);
+	}
+
+	private void dropDefinition(String name){
+		definitions.remove(name.toUpperCase());
 	}
 
 	private void lexize()
 		throws Exception
 	{
-		String contents = contents() + "\n"; // \n helps us make sure we get the last token
+		lines = new ArrayList<List<String>>();
+		lexize(contents());
+	}
+
+	private void lexize(String contents)
+		throws Exception
+	{
+		contents += "\n"; // \n helps us make sure we get the last token
 		StringTokenizer tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\", true);
 		boolean inComment = false;
-		lines = new ArrayList<List<String>>();
 		List<String> line = new ArrayList<String>();
+		String expression = "";
+		boolean inQuotes = false;
+		List<Boolean> ifstack = new ArrayList<Boolean>();
+		List<Boolean> ifskiprest = new ArrayList<Boolean>();
 		while (tokens.hasMoreTokens()){
 			String token = tokens.nextToken();
 			if (token.equals("\n")){
-				if (line.size() > 0){
-					if (line.get(0).toUpperCase().equals("DAT")){
-						// any size is fine
-					}
-					else if (line.size() > 3){
-						throw new Exception("Too many tokens on line " + lines.size() + ": " + joinLine(line) + ", " + line);
-					}
-					lines.add(line);
-					line = new ArrayList<String>();
-				}
 				inComment = false;
+				expression = expression.trim();
+				if (expression.length() > 0){
+					line.add(expression);
+					expression = "";
+				}
+				if (line.size() == 0)
+					continue;
+				boolean isPreprocessor = line.get(0).matches("#.*|\\..*");
+				String preprocessor = line.get(0).replaceAll("^#|^\\.", "");
+				if (ifstack.size() > 0){
+					boolean skippingLines = ! ifstack.get(ifstack.size() - 1);
+					boolean isIfRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("end")|| preprocessor.equals("ifdef")|| preprocessor.equals("ifndef"));
+					if (skippingLines && ! isIfRelated){
+						line = new ArrayList<String>();
+						continue;
+					}
+				}
+				if (isPreprocessor){
+					if (preprocessor.equalsIgnoreCase("include")){
+						if (line.size() != 2)
+							throw new Exception("Wrong token count on line " + joinLine(line));
+						String path = getPath(line.get(1));
+						if (! new File(path).exists())
+							System.out.println(path + " not exists");
+						else
+							lexize(contents(path));
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (preprocessor.equalsIgnoreCase("incbin")){
+						if (line.size() != 2)
+							throw new Exception("Wrong token count on line " + joinLine(line));
+						File file = new File(getPath(line.get(1)));
+						FileInputStream reader = new FileInputStream(file);
+						int length = (int)file.length();
+						if (length % 2 == 1)
+							length++; // without this we'll leave out the last byte
+						byte[] octets = new byte[length];
+						reader.read(octets);
+						line = new ArrayList<String>();
+						line.add("DAT");
+						for (int i = 0; i < octets.length / 2; i++){
+							int word = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
+							line.add("0x" + Hexer.hex(word));
+						}
+					}
+					else if (preprocessor.equalsIgnoreCase("def") || preprocessor.equalsIgnoreCase("define") || preprocessor.equalsIgnoreCase("equ")){
+						if (line.size() < 2 || line.size() > 3)
+							throw new Exception("Wrong token count on line " + joinLine(line));
+						String name = line.get(1);
+						int value = 1;
+						if (line.size() == 3){
+							MathExpression exp = buildExpression(line.get(2));
+							if (exp.numericValue() == null)
+								throw new Exception("Couldn't evaluate " + line.get(2) + " => " + exp);
+							value = exp.numericValue();
+						}
+						addDefinition(name, value);
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (preprocessor.equalsIgnoreCase("undef")){
+						if (line.size() != 2)
+							throw new Exception("Wrong token count on line " + joinLine(line));
+						String name = line.get(1);
+						dropDefinition(name);
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (preprocessor.equalsIgnoreCase("echo")){
+						line.remove(0);
+						System.out.println(joinLine(line));
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (preprocessor.equalsIgnoreCase("error")){
+						line.remove(0);
+						throw new Exception(joinLine(line));
+					}
+					else if (preprocessor.equalsIgnoreCase("if") || preprocessor.equalsIgnoreCase("ifdef") || preprocessor.equalsIgnoreCase("ifndef")){
+						if (ifstack.size() > 0 && ! ifstack.get(ifstack.size() - 1)){
+							ifstack.add(false);
+							ifskiprest.add(true);
+							line = new ArrayList<String>();
+							continue;
+						}
+						String eval = line.get(1);
+						if (preprocessor.equalsIgnoreCase("ifdef"))
+							eval = "isdef(" + eval + ")";
+						else if (preprocessor.equalsIgnoreCase("ifndef"))
+							eval = "!isdef(" + eval + ")";
+						MathExpression exp = buildExpression(eval);
+						if (exp.numericValue() == null)
+							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
+						boolean result = exp.numericValue() != 0;
+						ifstack.add(result);
+						ifskiprest.add(result);
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (preprocessor.equalsIgnoreCase("elif") || preprocessor.equalsIgnoreCase("elsif")){
+						if (ifstack.size() == 0)
+							throw new Exception(preprocessor + " in wrong context");
+						if (ifskiprest.get(ifskiprest.size() - 1)){
+							ifstack.set(ifstack.size() - 1, false);
+							continue;
+						}
+						String eval = line.get(1);
+						MathExpression exp = buildExpression(eval);
+						if (exp.numericValue() == null)
+							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
+						boolean result = exp.numericValue() != 0;
+						ifstack.set(ifstack.size() - 1, result);
+						ifskiprest.add(ifstack.size() - 1, result);
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (preprocessor.equalsIgnoreCase("else")){
+						if (ifstack.size() == 0)
+							throw new Exception(preprocessor + " in wrong context");
+						if (ifskiprest.get(ifskiprest.size() - 1)){
+							ifstack.set(ifstack.size() - 1, false);
+							continue;
+						}
+						ifstack.set(ifstack.size() - 1, true);
+						ifskiprest.add(ifstack.size() - 1, true);
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (preprocessor.equalsIgnoreCase("end")){
+						if (ifstack.size() == 0)
+							throw new Exception(preprocessor + " in wrong context");
+						ifskiprest.remove(ifstack.size() - 1);
+						ifstack.remove(ifstack.size() - 1);
+						line = new ArrayList<String>();
+						continue;
+					}
+					else
+						throw new Exception("Preprocessor directive not handled " + preprocessor);
+
+				}
+				if (line.size() == 0)
+					continue;
+				if (line.get(0).equalsIgnoreCase("DAT")){
+					// any size is fine
+				}
+				else if (line.size() > 3){
+					throw new Exception("Too many tokens on line " + lines.size() + ": " + joinLine(line) + ", " + line);
+				}
+				lines.add(line);
+				line = new ArrayList<String>();
 				continue;
 			}
 			if (inComment)
 				continue;
-			if (token.equals(",") || token.equals(" ") || token.equals("\t") || token.equals("\r") || token.equals("\r"))
+			if (token.equals(" ") && line.size() == 0 && expression.trim().length() > 0){ // first token ends at space, other tokens end at ,
+				expression = expression.trim();
+				line.add(expression);
+				expression = "";
 				continue;
+			}
+			if (token.equals(",")){
+				expression = expression.trim();
+				line.add(expression);
+				expression = "";
+				continue;
+			}
 			if (token.equals(";")){
 				inComment = true;
 				continue;
 			}
 			if (token.charAt(0) == '"'){
+				inQuotes = true;
 				boolean escaping = false;
 				while (tokens.hasMoreTokens()){
 					String subtoken = tokens.nextToken();
@@ -350,15 +538,28 @@ class Assembler{
 			}
 			if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
 				if (line.size() > 0)
-					throw new Exception("Label not at beginning of line " + token);
+					throw new Exception("Label not at beginning of line " + token + " in " + joinLine(line));
 				addLabel(token.replaceAll("^:|:$", ""), lines.size());
 				continue;
 			}
 			if (line.size() == 0 && token.equalsIgnoreCase("DAT")){
 				line = new ArrayList<String>();
 			}
-			line.add(token);
+			expression += token;
 		}
+		if (ifstack.size() > 0)
+			throw new Exception("Reached end of program without finding .end");
+	}
+
+	private String getPath(String token)
+		throws Exception
+	{
+		if (token.charAt(0) == '"')
+			return stringIncluder.pathTo(token.replaceAll("^\"|\"$", ""));
+		else if (token.charAt(0) == '<')
+			return bracketIncluder.pathTo(token.replaceAll("^\\<|\\>$", ""));
+		else
+			throw new Exception("Path not understood: " + token);
 	}
 
 	public String joinLine(List<String> line){
