@@ -43,6 +43,7 @@ class Assembler{
 	private String filename;
 	private List<List <String>> lines;
 	private HashMap<String, Integer> labelsToLines = new HashMap<String, Integer>();
+	private HashMap<String, Integer> labelOffsets = new HashMap<String, Integer>();
 	private HashMap<Integer, AssembleStructure> structures = new HashMap<Integer, AssembleStructure>();
 	private HashMap<Integer, Integer> linesToBytes = new HashMap<Integer, Integer>();
 	private boolean labelsAligned = false;
@@ -184,7 +185,7 @@ class Assembler{
 		int position = 0;
 		for (int i = 0; i < lines.size(); i++){
 			AssembleStructure s = structures.get(i);
-			System.arraycopy(s.toBytes(), 0, program, position, s.length());
+			System.arraycopy(s.toBytes(position), 0, program, position, s.length());
 			position += s.length();
 		}
 	}
@@ -224,7 +225,7 @@ class Assembler{
 		Integer alignment = linesToBytes.get(line);
 		if (alignment == null)
 			throw new Exception("Label refers to non-existant line: " + label);
-		return alignment;
+		return alignment + labelOffsets.get(label.toUpperCase());
 	}
 
 	public boolean isNumericExpression(String expression){
@@ -302,20 +303,24 @@ class Assembler{
 		for (int i = 0; i < lines.size(); i++){
 			String[] t = new String[lines.get(i).size()];
 			lines.get(i).toArray(t);
-			if (lines.get(i).get(0).equalsIgnoreCase("DAT"))
-				structures.put(i, new AssembleData(t));
+			String instruction = lines.get(i).get(0);
+			if (instruction.equalsIgnoreCase("DAT") || instruction.equalsIgnoreCase(".DW") || instruction.equalsIgnoreCase(".DP") || instruction.equalsIgnoreCase(".ASCII"))
+				structures.put(i, new AssembleData(lines.get(i), instruction.equalsIgnoreCase(".DP")));
+			else if (instruction.equalsIgnoreCase(".FILL"))
+				structures.put(i, new AssembleFill(lines.get(i)));
 			else{
 				structures.put(i, new AssembleInstruction(t));
 			}
 		}
 	}
 
-	private void addLabel(String label, int line)
+	private void addLabel(String label, int line, int labelOffset)
 		throws Exception
 	{
 		if (definitions.get(label.toUpperCase()) != null)
 			throw new Exception("Cannot redefine " + label + ". Undefine it first.");
 		labelsToLines.put(label.toUpperCase(), line);
+		labelOffsets.put(label.toUpperCase(), labelOffset);
 	}
 
 	private void addDefinition(String name, int value){
@@ -344,6 +349,7 @@ class Assembler{
 		boolean inQuotes = false;
 		List<Boolean> ifstack = new ArrayList<Boolean>();
 		List<Boolean> ifskiprest = new ArrayList<Boolean>();
+		int org = 0;
 		while (tokens.hasMoreTokens()){
 			String token = tokens.nextToken();
 			if (token.equals("\n")){
@@ -491,6 +497,26 @@ class Assembler{
 						line = new ArrayList<String>();
 						continue;
 					}
+					else if (preprocessor.equalsIgnoreCase("org")){
+						if (line.size() != 2)
+							throw new Exception("Not enough tokens: " + joinLine(line));
+						String eval = line.get(1);
+						MathExpression exp = buildExpression(eval);
+						if (exp.numericValue() == null)
+							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
+						org = exp.numericValue();
+						line = new ArrayList<String>();
+						continue;
+					}
+					else if (
+							preprocessor.equalsIgnoreCase("dw")
+							|| preprocessor.equalsIgnoreCase("dp")
+							|| preprocessor.equalsIgnoreCase("fill")
+							|| preprocessor.equalsIgnoreCase("ascii")
+							// || preprocessor.equalsIgnoreCase("align") ... hmm ... this one's gonna require some rework of the program
+					){
+						line.set(0, "." + preprocessor.toUpperCase()); // normalize, but otherwise let the structurizer deal with it.
+					}
 					else
 						throw new Exception("Preprocessor directive not handled " + preprocessor);
 
@@ -545,7 +571,7 @@ class Assembler{
 			if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
 				if (line.size() > 0)
 					throw new Exception("Label not at beginning of line " + token + " in " + joinLine(line));
-				addLabel(token.replaceAll("^:|:$", ""), lines.size());
+				addLabel(token.replaceAll("^:|:$", ""), lines.size(), org);
 				continue;
 			}
 			if (line.size() == 0 && token.equalsIgnoreCase("DAT")){
@@ -586,31 +612,154 @@ class Assembler{
 		public int[] toBytes()
 			throws Exception;
 
+		public int[] toBytes(int position)
+			throws Exception;
+
+	}
+
+	private class AssembleFill implements AssembleStructure{
+
+		private int length;
+		private int value = 0;
+
+		public AssembleFill(List<String> line)
+			throws Exception
+		{
+			if (line.size() == 1 || line.size() > 3)
+				throw new Exception("Wrong token count: " + joinLine(line));
+			MathExpression lengthExp = buildExpression(line.get(1));
+			if (lengthExp.numericValue() == null)
+				throw new Exception("First argument not understood: " + line.get(1) + " => " + lengthExp);
+			length = lengthExp.numericValue();
+			if (line.size() == 3){
+				MathExpression valueExp = buildExpression(line.get(2));
+				if (valueExp.numericValue() == null)
+					throw new Exception("First argument not understood: " + line.get(2) + " => " + valueExp);
+				value = valueExp.numericValue() & 0xFFFF;
+			}
+		}
+
+		public int length()
+			throws Exception
+		{
+			return length;
+		}
+
+		public String toHexParts()
+			throws Exception
+		{
+			return Hexer.hexArray(toBytes());
+		}
+
+		public int[] toBytes(int position)
+			throws Exception
+		{
+			return toBytes();
+		}
+
+		public int[] toBytes()
+			throws Exception
+		{
+			int[] bytes = new int[length];
+			if (value != 0)
+				for (int i = 0; i < bytes.length; i++)
+					bytes[i] = value;
+			return bytes;
+		}
+
 	}
 
 	private class AssembleData implements AssembleStructure{
 
 		private int[][] data;
+		private boolean pack = false;
 
-		public AssembleData(String[] line)
+		public AssembleData(List<String> line, boolean pack)
 			throws Exception
 		{
-			data = new int[line.length - 1][];
-			for (int i = 1; i < line.length; i++){
-				if (line[i].charAt(0) == '"'){
-					data[i - 1] = getString(line[i]);
+			this.pack = pack;
+			line.remove(0);
+			data = new int[line.size()][];
+			int i = 0;
+			for (String word : line){
+				if (word.indexOf('"') > -1){
+					data[i++] = getString(word);
 				}
-				else if (isNumericExpression(line[i])){
+				else if (isNumericExpression(word)){
 					int[] number = new int[1];
-					number[0] = interpretNumber(line[i]);
-					data[i - 1] = number;
+					MathExpression exp = buildExpression(word);
+					if (exp.numericValue() == null)
+						throw new Exception("Expression does not simplify to literal: " + word + " => " + exp);
+					number[0] = exp.numericValue() & 0xFFFF;
+					data[i++] = number;
 				}
 				else
-					throw new Exception("Data not understood: " + line[i]);
+					throw new Exception("Data not understood: " + word);
 			}
 		}
 
-		private int[] getString(String code){
+		private int[] getString(String code)
+			throws Exception
+		{
+			boolean pack = false;
+			boolean swap = false;
+			boolean zeroTerminate = false;
+			boolean wordZeroTerminate = false;
+			boolean bytePascalLength = false;
+			boolean wordPascalLength = false;
+			int OR = 0;
+			int quoteStart = 0;
+			for (int i = 0; i < code.length(); i++){
+				char c = code.charAt(i);
+				if (c == 'k'){
+					if (pack && swap)
+						throw new Exception("k and s are incompatible");
+					pack = true;
+					swap = false;
+				}
+				else if (c == 's'){
+					if (pack && ! swap)
+						throw new Exception("k and s are incompatible");
+					pack = true;
+					swap = true;
+				}
+				else if (c == 'z'){
+					if (wordZeroTerminate)
+						throw new Exception("z and x are incompatible");
+					zeroTerminate = true;
+				}
+				else if (c == 'x'){
+					if (zeroTerminate)
+						throw new Exception("z and x are incompatible");
+					wordZeroTerminate = true;
+				}
+				else if (c == 'a'){
+					if (wordPascalLength)
+						throw new Exception("a and p are incompatible");
+					bytePascalLength = true;
+				}
+				else if (c == 'p'){
+					if (bytePascalLength)
+						throw new Exception("a and p are incompatible");
+					wordPascalLength = true;
+				}
+				else if (c == '<'){
+					String ORString = "";
+					for (i++; i < code.length(); i++)
+						if (code.charAt(i) == '>')
+							break;
+						else
+							ORString += code.charAt(i);
+					MathExpression exp = buildExpression(ORString);
+					if (exp.numericValue() == null)
+						throw new Exception("OR value doesn't simplify to literal: " + ORString + " => " + exp);
+					OR = exp.numericValue();
+				}
+				else if (c == '"'){
+					quoteStart = i;
+					break;
+				}
+			}
 			HashMap<Character, Character> escapes = new HashMap<Character, Character>();
 			escapes.put('n', '\n');
 			escapes.put('r', '\r');
@@ -621,7 +770,7 @@ class Assembler{
 			boolean escaping = false;
 			int[] string = new int[code.length()];
 			int currentChar = 0;
-			for (int i = 1; i < code.length() - 1; i++){ // skips the outer quotes
+			for (int i = quoteStart + 1; i < code.length() - 1; i++){ // skips the outer quotes
 				char c = code.charAt(i);
 				if (escaping){
 					escaping = false;
@@ -635,11 +784,58 @@ class Assembler{
 				}
 				string[currentChar++] = c;
 			}
-			// Looks like you have to null-char delimit your own strings if you want them null-char delimited
-			// string[currentChar++] = 0; // null-char delimited I assume.
 			int[] trimString = new int[currentChar];
 			System.arraycopy(string, 0, trimString, 0, currentChar);
-			return trimString;
+			string = trimString;
+			if (OR > 0)
+				for (int i = 0; i < string.length; i++)
+					string[i] |= OR;
+			int stringLength = string.length;
+			int bytesLength;
+			if (pack){
+				boolean byteLengthMarker = zeroTerminate || bytePascalLength;
+				boolean wordLengthMarker = ! byteLengthMarker && (wordZeroTerminate || wordPascalLength);
+				int contentLength = stringLength + (byteLengthMarker ? 1 : 0);
+				bytesLength = contentLength / 2 + contentLength % 2 + (wordLengthMarker ? 1 : 0);
+			}
+			else
+				bytesLength = stringLength + (zeroTerminate || wordZeroTerminate || bytePascalLength || wordPascalLength ? 1 : 0);
+			int[] bytes = new int[bytesLength];
+			if (pack){
+				int bytesStart = 0;
+				int stringStart = 0;
+				if (wordPascalLength){
+					bytes[0] = stringLength;
+					bytesStart = 1;
+				}
+				else if (bytePascalLength){
+					if (swap)
+						bytes[0] = (string[0] << 8) | (stringLength & 0xFF);
+					else
+						bytes[0] = (stringLength << 8) | (string[0] & 0xFF);
+					bytesStart = 1;
+					stringStart = 1;
+				}
+				for (int i = stringStart; i < string.length; i++){
+					int bytesI = (i - stringStart) / 2 + bytesStart;
+					int high = (i - stringStart) % 2;
+					if (high == (swap ? 1 : 0))
+						bytes[bytesI] |= string[i] << 8;
+					else
+						bytes[bytesI] |= string[i] & 0xFF;
+				}
+				return bytes;
+			}
+			else{
+				int start = 0;
+				if (wordPascalLength || bytePascalLength){
+					bytes[0] = stringLength;
+					start = 1;
+				}
+				for (int i = 0; i < string.length; i++)
+					bytes[i + start] = string[i];
+				return bytes;
+			}
 		}
 
 		public int length()
@@ -648,6 +844,8 @@ class Assembler{
 			int length = 0;
 			for (int i = 0; i < data.length; i++)
 				length += data[i].length;
+			if (pack)
+				return length / 2 + length % 2;
 			return length;
 		}
 
@@ -657,16 +855,31 @@ class Assembler{
 			return Hexer.hexArray(toBytes());
 		}
 
+		public int[] toBytes(int position)
+			throws Exception
+		{
+			return toBytes();
+		}
+
 		public int[] toBytes()
 			throws Exception
 		{
-			int[] bytes = new int[length()];
+			int[] bytes = new int[pack ? length() * 2 : length()];
 			int position = 0;
 			for (int i = 0; i < data.length; i++){
 				System.arraycopy(data[i], 0, bytes, position, data[i].length);
 				position += data[i].length;
 			}
+			if (pack)
+				return packed(bytes);
 			return bytes;
+		}
+
+		private int[] packed(int[] bytes){
+			int[] packed = new int[bytes.length / 2];
+			for (int i = 0; i < packed.length; i++)
+				packed[i] = (bytes[i * 2] << 8) | (bytes[i * 2 + 1] & 0xFF);
+			return packed;
 		}
 
 	}
@@ -736,6 +949,12 @@ class Assembler{
 			if (b != null && b.hasExtraByte())
 				hex += " " + Hexer.hex(b.extraByte());
 			return hex;
+		}
+
+		public int[] toBytes(int position)
+			throws Exception
+		{
+			return toBytes();
 		}
 
 		public int[] toBytes()
