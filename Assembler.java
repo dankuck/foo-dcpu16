@@ -344,8 +344,36 @@ class Assembler{
 		private int type;
 		public boolean active;
 		public boolean skiprest;
-		public FlowFrame(int type){ this.type = type; }
-		public boolean isIf(){ return type == IF; }
+		public int countDown;
+		public int currentLine;
+		public List<List<String>> repeatLines;
+		public boolean repeating;
+		public FlowFrame(int type){
+			this.type = type;
+			if (type == REP)
+				repeatLines = new ArrayList<List<String>>();
+		}
+		public boolean isIf(){
+			return type == IF;
+		}
+		public boolean isRep(){
+			return type == REP;
+		}
+		public boolean active(){
+			return active;
+		}
+		public void addLine(List<String> line){
+			repeatLines.add(new ArrayList<String>(line));
+		}
+		public List<String> nextLine(){
+			if (repeatLines.size() == 0)
+				throw new RuntimeException("No lines captured... not even .end");
+			if (currentLine >= repeatLines.size()){
+				currentLine = 0;
+				countDown--;
+			}
+			return new ArrayList<String>(repeatLines.get(currentLine++));
+		}
 	}
 
 	private void lexize(String contents)
@@ -358,10 +386,22 @@ class Assembler{
 		String expression = "";
 		boolean inQuotes = false;
 		List<FlowFrame> flowstack = new ArrayList<FlowFrame>();
+		List<FlowFrame> repeaters = new ArrayList<FlowFrame>();
 		int org = 0;
-		while (tokens.hasMoreTokens()){
+		while (true){
 			FlowFrame flowtop = flowstack.size() > 0 ? flowstack.get(flowstack.size() - 1) : null;
-			String token = tokens.nextToken();
+			FlowFrame repeater = repeaters.size() > 0 ? repeaters.get(repeaters.size() - 1) : null;
+			String token;
+			if (repeater != null){
+				line = repeater.nextLine();
+				//System.out.println("Repeating " + joinLine(line));
+				token = "\n";
+			}
+			else{
+				if (! tokens.hasMoreTokens())
+					break;
+				token = tokens.nextToken();
+			}
 			if (token.equals("\n")){
 				inComment = false;
 				expression = expression.trim();
@@ -373,10 +413,18 @@ class Assembler{
 					continue;
 				boolean isPreprocessor = line.get(0).matches("#.*|\\..*");
 				String preprocessor = line.get(0).replaceAll("^#|^\\.", "");
-				if (flowtop != null && flowtop.isIf()){
-					boolean skippingLines = ! flowtop.active;
-					boolean isIfRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("end") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef"));
-					if (skippingLines && ! isIfRelated){
+				if (flowtop != null){
+					for (int i = flowstack.size() - 1; i >= 0; i--){
+						FlowFrame r = flowstack.get(i);
+						if (! r.isRep())
+							continue;
+						if (r.repeating)
+							break;
+						r.addLine(line);
+					}
+					boolean skippingLines = ! flowtop.active();
+					boolean isFlowRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef") || preprocessor.equals("rep") || preprocessor.equals("end"));
+					if (skippingLines && ! isFlowRelated ){
 						line = new ArrayList<String>();
 						continue;
 					}
@@ -445,10 +493,11 @@ class Assembler{
 						throw new Exception(joinLine(line));
 					}
 					else if (preprocessor.equalsIgnoreCase("if") || preprocessor.equalsIgnoreCase("ifdef") || preprocessor.equalsIgnoreCase("ifndef")){
-						if (flowtop != null && ! flowtop.active){
+						if (flowtop != null && ! flowtop.active()){
 							FlowFrame newtop = new FlowFrame(FlowFrame.IF);
 							newtop.active = false;
 							newtop.skiprest = true;
+							//System.out.println("Adding inactive if to stack");
 							flowstack.add(newtop);
 							line = new ArrayList<String>();
 							continue;
@@ -464,6 +513,7 @@ class Assembler{
 						if (exp.numericValue() == null)
 							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
 						boolean result = exp.numericValue() != 0;
+						//System.out.println("Adding active if to stack");
 						FlowFrame newtop = new FlowFrame(FlowFrame.IF);
 						newtop.active = result;
 						newtop.skiprest = result;
@@ -504,10 +554,46 @@ class Assembler{
 						line = new ArrayList<String>();
 						continue;
 					}
+					else if (preprocessor.equalsIgnoreCase("rep")){
+						if (flowtop != null && ! flowtop.active()){
+							//System.out.println("Adding inactive rep to stack");
+							FlowFrame rep = new FlowFrame(FlowFrame.REP);
+							rep.active = false;
+							flowstack.add(rep);
+							line = new ArrayList<String>();
+							continue;
+						}
+						if (line.size() != 2)
+							throw new Exception("Wrong token count: " + joinLine(line));
+						MathExpression exp = buildExpression(line.get(1));
+						if (exp.numericValue() == null)
+							throw new Exception("Expression doesn't literalize: " + line.get(1) + " => " + exp);
+						//System.out.println("Adding active rep to stack");
+						FlowFrame rep = new FlowFrame(FlowFrame.REP);
+						rep.active = exp.numericValue() > 0;
+						rep.countDown = exp.numericValue() - 1;
+						flowstack.add(rep);
+						line = new ArrayList<String>();
+						continue;
+					}
 					else if (preprocessor.equalsIgnoreCase("end")){
 						if (flowtop == null)
 							throw new Exception(preprocessor + " in wrong context");
-						flowstack.remove(flowstack.size() - 1);
+						if (! flowtop.isRep() || flowtop.countDown <= 0){
+							//System.out.println("Removing " + (flowtop.isRep() ? "rep" : "if") + " from stack");
+							if (repeater == flowtop)
+								repeaters.remove(repeaters.size() - 1);
+							flowstack.remove(flowstack.size() - 1);
+						}
+						else if (flowtop.isRep() && ! flowtop.repeating){
+							//System.out.println("First repeat (second run)");
+							flowtop.repeating = true; // start repeating.
+							flowtop.countDown--;
+							repeaters.add(flowtop);
+						}
+						if (flowtop.countDown > 0){
+							//System.out.println("Looping: " + flowtop.countDown);
+						}
 						line = new ArrayList<String>();
 						continue;
 					}
