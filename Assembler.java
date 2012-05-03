@@ -401,6 +401,14 @@ class Assembler{
 			tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\", true);
 		}
 
+		private FlowFrame flowtop(){
+			return flowstack.size() > 0 ? flowstack.get(flowstack.size() - 1) : null;
+		}
+
+		private FlowFrame repeater(){
+			return repeaters.size() > 0 ? repeaters.get(repeaters.size() - 1) : null;
+		}
+
 		public void lex()
 			throws Exception
 		{
@@ -409,10 +417,10 @@ class Assembler{
 			flowstack.add(bottom);
 			int startSize = flowstack.size();
 			while (true){
-				FlowFrame flowtop = flowstack.size() > 0 ? flowstack.get(flowstack.size() - 1) : null;
+				FlowFrame flowtop = flowtop();
 				if (flowtop == null)
 					throw new Exception("Something went wrong with the flowstack.");
-				FlowFrame repeater = repeaters.size() > 0 ? repeaters.get(repeaters.size() - 1) : null;
+				FlowFrame repeater = repeater();
 				List<String> line;
 				if (repeater != null)
 					line = repeater.nextLine();
@@ -433,223 +441,12 @@ class Assembler{
 				if (skippingLines && ! isFlowRelated)
 					continue;
 				if (isPreprocessor){
-					if (preprocessor.equals("include")){
-						if (line.size() != 2)
-							throw new Exception("Wrong token count on line " + joinLine(line));
-						String path = getPath(line.get(1));
-						if (! new File(path).exists())
-							System.out.println(path + " not exists");
-						else
-							lexize(contents(path));
-						continue;
-					}
-					else if (preprocessor.equals("incbin")){
-						if (line.size() != 2)
-							throw new Exception("Wrong token count on line " + joinLine(line));
-						File file = new File(getPath(line.get(1)));
-						FileInputStream reader = new FileInputStream(file);
-						int length = (int)file.length();
-						if (length % 2 == 1)
-							length++; // without this we'd leave out the last byte
-						byte[] octets = new byte[length];
-						reader.read(octets);
-						line.add("DAT");
-						for (int i = 0; i < octets.length / 2; i++){
-							int word = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
-							line.add("0x" + Hexer.hex(word));
-						}
-						lines.add(line);
-						continue;
-					}
-					else if (preprocessor.equals("def") || preprocessor.equals("define") || preprocessor.equals("equ")){
-						if (line.size() < 2 || line.size() > 3)
-							throw new Exception("Wrong token count on line " + joinLine(line));
-						String[] parts = line.get(1).split("\\s");
-						String name = parts[0];
-						int value = 1;
-						if (parts.length > 2)
-							throw new Exception("Wrong token count on line " + joinLine(line));
-						if (parts.length == 2){
-							MathExpression exp = buildExpression(parts[1]);
-							if (exp.numericValue() == null)
-								throw new Exception("Couldn't evaluate " + parts[1] + " => " + exp);
-							value = exp.numericValue();
-						}
-						addDefinition(name, value);
-						continue;
-					}
-					else if (preprocessor.equals("undef")){
-						if (line.size() != 2)
-							throw new Exception("Wrong token count on line " + joinLine(line));
-						String name = line.get(1);
-						dropDefinition(name);
-						continue;
-					}
-					else if (preprocessor.equals("echo")){
-						line.remove(0);
-						System.out.println(joinLine(line));
-						continue;
-					}
-					else if (preprocessor.equals("error")){
-						line.remove(0);
-						throw new Exception(joinLine(line));
-					}
-					else if (preprocessor.equals("if") || preprocessor.equals("ifdef") || preprocessor.equals("ifndef")){
-						if (! flowtop.active()){
-							FlowFrame newtop = new FlowFrame(FlowFrame.IF);
-							newtop.active = false;
-							newtop.skiprest = true;
-							//System.out.println("Adding inactive if to stack");
-							flowstack.add(newtop);
-							continue;
-						}
-						if (line.size() != 2)
-							throw new Exception("Wrong token count: " + joinLine(line));
-						String eval = line.get(1);
-						if (preprocessor.equals("ifdef"))
-							eval = "isdef(" + eval + ")";
-						else if (preprocessor.equals("ifndef"))
-							eval = "!isdef(" + eval + ")";
-						MathExpression exp = buildExpression(eval);
-						if (exp.numericValue() == null)
-							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
-						boolean result = exp.numericValue() != 0;
-						//System.out.println("Adding active if to stack");
-						FlowFrame newtop = new FlowFrame(FlowFrame.IF);
-						newtop.active = result;
-						newtop.skiprest = result;
-						flowstack.add(newtop);
-						continue;
-					}
-					else if (preprocessor.equals("elif") || preprocessor.equals("elsif")){
-						if (! flowtop.isIf())
-							throw new Exception(preprocessor + " in wrong context");
-						if (flowtop.skiprest){
-							flowtop.active = false;
-							continue;
-						}
-						if (line.size() != 2)
-							throw new Exception("Wrong token count: " + joinLine(line));
-						String eval = line.get(1);
-						MathExpression exp = buildExpression(eval);
-						if (exp.numericValue() == null)
-							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
-						boolean result = exp.numericValue() != 0;
-						flowtop.active = result;
-						flowtop.skiprest = result;
-						continue;
-					}
-					else if (preprocessor.equals("else")){
-						if (! flowtop.isIf())
-							throw new Exception(preprocessor + " in wrong context");
-						if (flowtop.skiprest){
-							flowtop.active = false;
-							continue;
-						}
-						flowtop.active = true;
-						flowtop.skiprest = true;
-						continue;
-					}
-					else if (preprocessor.equals("rep")){
-						if (! flowtop.active()){
-							//System.out.println("Adding inactive rep to stack");
-							FlowFrame rep = new FlowFrame(FlowFrame.REP);
-							rep.active = false;
-							flowstack.add(rep);
-							continue;
-						}
-						if (line.size() != 2)
-							throw new Exception("Wrong token count: " + joinLine(line));
-						MathExpression exp = buildExpression(line.get(1));
-						if (exp.numericValue() == null)
-							throw new Exception("Expression doesn't literalize: " + line.get(1) + " => " + exp);
-						//System.out.println("Adding active rep to stack");
-						FlowFrame rep = new FlowFrame(FlowFrame.REP);
-						rep.active = exp.numericValue() > 0;
-						rep.countDown = exp.numericValue() - 1;
-						flowstack.add(rep);
-						continue;
-					}
-					else if (preprocessor.equals("macro")){
-						if (! flowtop.active()){
-							//System.out.println("Adding inactive rep to stack");
-							FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
-							mac.active = false;
-							flowstack.add(mac);
-							continue;
-						}
-						if (line.size() == 1)
-							throw new Exception("Not enough tokens on line " + joinLine(line));
-						String name = "";
-						String firstToken = line.get(1);
-						for (int i = 0; i < firstToken.length(); i++){
-							char c = firstToken.charAt(i);
-							if (c == '('){
-								firstToken = firstToken.substring(i);
-								break;
-							}
-							else
-								name += c;
-						}
-						if (firstToken.length() == 0 || firstToken.charAt(0) != '(' || name.length() == 0)
-							throw new Exception("Macro definition is malformed");
-						List<String> params = new ArrayList<String>();
-						if (line.size() == 2)
-							params.add(firstToken.substring(1, firstToken.length() - 1));
-						else if (line.size() > 2){
-							params.add(firstToken.substring(1));
-							for (int i = 2; i < line.size() - 1; i++)
-								params.add(line.get(i));
-						}
-						FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
-						mac.active = false;
-						Macro m = new Macro(name, params, mac);
-						addMacro(name, m);
-						flowstack.add(mac);
-						continue;
-					}
-					else if (preprocessor.equals("end")){
-						if (flowtop.isBottom())
-							throw new Exception(preprocessor + " in wrong context");
-						if (! flowtop.isRep() || flowtop.countDown <= 0){
-							//System.out.println("Removing " + (flowtop.isRep() ? "rep" : "if") + " from stack");
-							if (repeater == flowtop)
-								repeaters.remove(repeaters.size() - 1);
-							flowstack.remove(flowstack.size() - 1);
-						}
-						else if (flowtop.isRep() && ! flowtop.repeating){
-							//System.out.println("First repeat (second run)");
-							flowtop.repeating = true; // start repeating.
-							flowtop.countDown--;
-							repeaters.add(flowtop);
-						}
-						if (flowtop.countDown > 0){
-							//System.out.println("Looping: " + flowtop.countDown);
-						}
-						continue;
-					}
-					else if (preprocessor.equals("org")){
-						if (line.size() != 2)
-							throw new Exception("Not enough tokens: " + joinLine(line));
-						String eval = line.get(1);
-						MathExpression exp = buildExpression(eval);
-						if (exp.numericValue() == null)
-							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
-						org = exp.numericValue();
-						continue;
-					}
-					else if (
-							preprocessor.equals("dw")
-							|| preprocessor.equals("dp")
-							|| preprocessor.equals("fill")
-							|| preprocessor.equals("ascii")
-							// || preprocessor.equals("align") ... hmm ... this one's gonna require some rework of the program
-					){
-						line.set(0, "." + preprocessor.toUpperCase()); // normalize, but otherwise let the structurizer deal with it.
-					}
-					else
-						throw new Exception("Preprocessor directive not handled " + preprocessor);
-
+					preprocess(preprocessor, line);
+					continue;
+				}
+				if (line.get(0).indexOf('(') >= 0){
+					callMacro(line);
+					continue;
 				}
 				if (line.size() == 0)
 					throw new Exception("Somehow ended up with a 0 length line");
@@ -661,6 +458,237 @@ class Assembler{
 				throw new Exception("There are too many ends");
 			if (flowstack.size() > startSize)
 				throw new Exception("There are not enough ends");
+		}
+
+		private void callMacro(List<String> line)
+			throws Exception
+		{
+			throw new Exception("Can't handle macros yet.");
+		}
+
+		private void preprocess(String preprocessor, List<String> line)
+			throws Exception
+		{
+			FlowFrame flowtop = flowtop();
+			FlowFrame repeater = repeater();
+			if (preprocessor.equals("include")){
+				if (line.size() != 2)
+					throw new Exception("Wrong token count on line " + joinLine(line));
+				String path = getPath(line.get(1));
+				if (! new File(path).exists())
+					System.out.println(path + " not exists");
+				else
+					lexize(contents(path));
+				return;
+			}
+			else if (preprocessor.equals("incbin")){
+				if (line.size() != 2)
+					throw new Exception("Wrong token count on line " + joinLine(line));
+				File file = new File(getPath(line.get(1)));
+				FileInputStream reader = new FileInputStream(file);
+				int length = (int)file.length();
+				if (length % 2 == 1)
+					length++; // without this we'd leave out the last byte
+				byte[] octets = new byte[length];
+				reader.read(octets);
+				line.add("DAT");
+				for (int i = 0; i < octets.length / 2; i++){
+					int word = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
+					line.add("0x" + Hexer.hex(word));
+				}
+				lines.add(line);
+				return;
+			}
+			else if (preprocessor.equals("def") || preprocessor.equals("define") || preprocessor.equals("equ")){
+				if (line.size() < 2 || line.size() > 3)
+					throw new Exception("Wrong token count on line " + joinLine(line));
+				String[] parts = line.get(1).split("\\s");
+				String name = parts[0];
+				int value = 1;
+				if (parts.length > 2)
+					throw new Exception("Wrong token count on line " + joinLine(line));
+				if (parts.length == 2){
+					MathExpression exp = buildExpression(parts[1]);
+					if (exp.numericValue() == null)
+						throw new Exception("Couldn't evaluate " + parts[1] + " => " + exp);
+					value = exp.numericValue();
+				}
+				addDefinition(name, value);
+				return;
+			}
+			else if (preprocessor.equals("undef")){
+				if (line.size() != 2)
+					throw new Exception("Wrong token count on line " + joinLine(line));
+				String name = line.get(1);
+				dropDefinition(name);
+				return;
+			}
+			else if (preprocessor.equals("echo")){
+				line.remove(0);
+				System.out.println(joinLine(line));
+				return;
+			}
+			else if (preprocessor.equals("error")){
+				line.remove(0);
+				throw new Exception(joinLine(line));
+			}
+			else if (preprocessor.equals("if") || preprocessor.equals("ifdef") || preprocessor.equals("ifndef")){
+				if (! flowtop.active()){
+					FlowFrame newtop = new FlowFrame(FlowFrame.IF);
+					newtop.active = false;
+					newtop.skiprest = true;
+					//System.out.println("Adding inactive if to stack");
+					flowstack.add(newtop);
+					return;
+				}
+				if (line.size() != 2)
+					throw new Exception("Wrong token count: " + joinLine(line));
+				String eval = line.get(1);
+				if (preprocessor.equals("ifdef"))
+					eval = "isdef(" + eval + ")";
+				else if (preprocessor.equals("ifndef"))
+					eval = "!isdef(" + eval + ")";
+				MathExpression exp = buildExpression(eval);
+				if (exp.numericValue() == null)
+					throw new Exception("Couldn't evaluate " + eval + " => " + exp);
+				boolean result = exp.numericValue() != 0;
+				//System.out.println("Adding active if to stack");
+				FlowFrame newtop = new FlowFrame(FlowFrame.IF);
+				newtop.active = result;
+				newtop.skiprest = result;
+				flowstack.add(newtop);
+				return;
+			}
+			else if (preprocessor.equals("elif") || preprocessor.equals("elsif")){
+				if (! flowtop.isIf())
+					throw new Exception(preprocessor + " in wrong context");
+				if (flowtop.skiprest){
+					flowtop.active = false;
+					return;
+				}
+				if (line.size() != 2)
+					throw new Exception("Wrong token count: " + joinLine(line));
+				String eval = line.get(1);
+				MathExpression exp = buildExpression(eval);
+				if (exp.numericValue() == null)
+					throw new Exception("Couldn't evaluate " + eval + " => " + exp);
+				boolean result = exp.numericValue() != 0;
+				flowtop.active = result;
+				flowtop.skiprest = result;
+				return;
+			}
+			else if (preprocessor.equals("else")){
+				if (! flowtop.isIf())
+					throw new Exception(preprocessor + " in wrong context");
+				if (flowtop.skiprest){
+					flowtop.active = false;
+					return;
+				}
+				flowtop.active = true;
+				flowtop.skiprest = true;
+				return;
+			}
+			else if (preprocessor.equals("rep")){
+				if (! flowtop.active()){
+					//System.out.println("Adding inactive rep to stack");
+					FlowFrame rep = new FlowFrame(FlowFrame.REP);
+					rep.active = false;
+					flowstack.add(rep);
+					return;
+				}
+				if (line.size() != 2)
+					throw new Exception("Wrong token count: " + joinLine(line));
+				MathExpression exp = buildExpression(line.get(1));
+				if (exp.numericValue() == null)
+					throw new Exception("Expression doesn't literalize: " + line.get(1) + " => " + exp);
+				//System.out.println("Adding active rep to stack");
+				FlowFrame rep = new FlowFrame(FlowFrame.REP);
+				rep.active = exp.numericValue() > 0;
+				rep.countDown = exp.numericValue() - 1;
+				flowstack.add(rep);
+				return;
+			}
+			else if (preprocessor.equals("macro")){
+				if (! flowtop.active()){
+					//System.out.println("Adding inactive rep to stack");
+					FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
+					mac.active = false;
+					flowstack.add(mac);
+					return;
+				}
+				if (line.size() == 1)
+					throw new Exception("Not enough tokens on line " + joinLine(line));
+				String name = "";
+				String firstToken = line.get(1);
+				for (int i = 0; i < firstToken.length(); i++){
+					char c = firstToken.charAt(i);
+					if (c == '('){
+						firstToken = firstToken.substring(i);
+						break;
+					}
+					else
+						name += c;
+				}
+				if (firstToken.length() == 0 || firstToken.charAt(0) != '(' || name.length() == 0)
+					throw new Exception("Macro definition is malformed");
+				List<String> params = new ArrayList<String>();
+				if (line.size() == 2)
+					params.add(firstToken.substring(1, firstToken.length() - 1));
+				else if (line.size() > 2){
+					params.add(firstToken.substring(1));
+					for (int i = 2; i < line.size() - 1; i++)
+						params.add(line.get(i));
+				}
+				FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
+				mac.active = false;
+				Macro m = new Macro(name, params, mac);
+				addMacro(name, m);
+				flowstack.add(mac);
+				return;
+			}
+			else if (preprocessor.equals("end")){
+				if (flowtop.isBottom())
+					throw new Exception(preprocessor + " in wrong context");
+				if (! flowtop.isRep() || flowtop.countDown <= 0){
+					//System.out.println("Removing " + (flowtop.isRep() ? "rep" : "if") + " from stack");
+					if (repeater == flowtop)
+						repeaters.remove(repeaters.size() - 1);
+					flowstack.remove(flowstack.size() - 1);
+				}
+				else if (flowtop.isRep() && ! flowtop.repeating){
+					//System.out.println("First repeat (second run)");
+					flowtop.repeating = true; // start repeating.
+					flowtop.countDown--;
+					repeaters.add(flowtop);
+				}
+				if (flowtop.countDown > 0){
+					//System.out.println("Looping: " + flowtop.countDown);
+				}
+				return;
+			}
+			else if (preprocessor.equals("org")){
+				if (line.size() != 2)
+					throw new Exception("Not enough tokens: " + joinLine(line));
+				String eval = line.get(1);
+				MathExpression exp = buildExpression(eval);
+				if (exp.numericValue() == null)
+					throw new Exception("Couldn't evaluate " + eval + " => " + exp);
+				org = exp.numericValue();
+				return;
+			}
+			else if (
+					preprocessor.equals("dw")
+					|| preprocessor.equals("dp")
+					|| preprocessor.equals("fill")
+					|| preprocessor.equals("ascii")
+					// || preprocessor.equals("align") ... hmm ... this one's gonna require some rework of the program
+			){
+				line.set(0, "." + preprocessor.toUpperCase()); // normalize, but otherwise let the structurizer deal with it.
+				lines.add(line);
+				return;
+			}
+			else
+				throw new Exception("Preprocessor directive not handled " + preprocessor);
 		}
 
 		private boolean hasMoreLines()
