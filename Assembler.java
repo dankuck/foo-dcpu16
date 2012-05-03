@@ -331,6 +331,9 @@ class Assembler{
 		definitions.remove(name.toUpperCase());
 	}
 
+	private void addMacro(String name, Macro macro){
+	}
+
 	private void lexize()
 		throws Exception
 	{
@@ -339,8 +342,10 @@ class Assembler{
 	}
 
 	private class FlowFrame{
-		final static public int IF = 1;
+		final static public int BOTTOM = 1;
 		final static public int REP = 2;
+		final static public int MACRO = 3;
+		final static public int IF = 4;
 		private int type;
 		public boolean active;
 		public boolean skiprest;
@@ -350,7 +355,7 @@ class Assembler{
 		public boolean repeating;
 		public FlowFrame(int type){
 			this.type = type;
-			if (type == REP)
+			if (isRep() || isMacro())
 				repeatLines = new ArrayList<List<String>>();
 		}
 		public boolean isIf(){
@@ -359,11 +364,18 @@ class Assembler{
 		public boolean isRep(){
 			return type == REP;
 		}
+		public boolean isMacro(){
+			return type == MACRO;
+		}
+		public boolean isBottom(){
+			return type == BOTTOM;
+		}
 		public boolean active(){
 			return active;
 		}
 		public void addLine(List<String> line){
-			repeatLines.add(new ArrayList<String>(line));
+			if (isRep() || isMacro())
+				repeatLines.add(new ArrayList<String>(line));
 		}
 		public List<String> nextLine(){
 			if (repeatLines.size() == 0)
@@ -376,61 +388,52 @@ class Assembler{
 		}
 	}
 
-	private void lexize(String contents)
-		throws Exception
-	{
-		contents += "\n"; // \n helps us make sure we get the last token
-		StringTokenizer tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\", true);
-		boolean inComment = false;
-		List<String> line = new ArrayList<String>();
-		String expression = "";
-		boolean inQuotes = false;
+	private class Lexer{
+
+		StringTokenizer tokens;
 		List<FlowFrame> flowstack = new ArrayList<FlowFrame>();
 		List<FlowFrame> repeaters = new ArrayList<FlowFrame>();
+		List<String> nextLine;
 		int org = 0;
-		while (true){
-			FlowFrame flowtop = flowstack.size() > 0 ? flowstack.get(flowstack.size() - 1) : null;
-			FlowFrame repeater = repeaters.size() > 0 ? repeaters.get(repeaters.size() - 1) : null;
-			String token;
-			if (repeater != null){
-				line = repeater.nextLine();
-				//System.out.println("Repeating " + joinLine(line));
-				token = "\n";
-			}
-			else{
-				if (! tokens.hasMoreTokens())
+
+		public Lexer(String contents){
+			contents += "\n"; // \n helps us make sure we get the last token
+			tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\", true);
+		}
+
+		public void lex()
+			throws Exception
+		{
+			FlowFrame bottom = new FlowFrame(FlowFrame.BOTTOM);
+			bottom.active = true;
+			flowstack.add(bottom);
+			int startSize = flowstack.size();
+			while (true){
+				FlowFrame flowtop = flowstack.size() > 0 ? flowstack.get(flowstack.size() - 1) : null;
+				if (flowtop == null)
+					throw new Exception("Something went wrong with the flowstack.");
+				FlowFrame repeater = repeaters.size() > 0 ? repeaters.get(repeaters.size() - 1) : null;
+				List<String> line;
+				if (repeater != null)
+					line = repeater.nextLine();
+				else if (! hasMoreLines())
 					break;
-				token = tokens.nextToken();
-			}
-			if (token.equals("\n")){
-				inComment = false;
-				expression = expression.trim();
-				if (expression.length() > 0){
-					line.add(expression);
-					expression = "";
+				else
+					line = nextLine();
+				for (int i = flowstack.size() - 1; i >= 0; i--){
+					FlowFrame r = flowstack.get(i);
+					if (r.repeating)
+						break;
+					r.addLine(line);
 				}
-				if (line.size() == 0)
-					continue;
 				boolean isPreprocessor = line.get(0).matches("#.*|\\..*");
-				String preprocessor = line.get(0).replaceAll("^#|^\\.", "");
-				if (flowtop != null){
-					for (int i = flowstack.size() - 1; i >= 0; i--){
-						FlowFrame r = flowstack.get(i);
-						if (! r.isRep())
-							continue;
-						if (r.repeating)
-							break;
-						r.addLine(line);
-					}
-					boolean skippingLines = ! flowtop.active();
-					boolean isFlowRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef") || preprocessor.equals("rep") || preprocessor.equals("end"));
-					if (skippingLines && ! isFlowRelated ){
-						line = new ArrayList<String>();
-						continue;
-					}
-				}
+				String preprocessor = line.get(0).replaceAll("^#|^\\.", "").toLowerCase();
+				boolean skippingLines = ! flowtop.active();
+				boolean isFlowRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef") || preprocessor.equals("rep") || preprocessor.equals("macro") || preprocessor.equals("end"));
+				if (skippingLines && ! isFlowRelated)
+					continue;
 				if (isPreprocessor){
-					if (preprocessor.equalsIgnoreCase("include")){
+					if (preprocessor.equals("include")){
 						if (line.size() != 2)
 							throw new Exception("Wrong token count on line " + joinLine(line));
 						String path = getPath(line.get(1));
@@ -438,32 +441,34 @@ class Assembler{
 							System.out.println(path + " not exists");
 						else
 							lexize(contents(path));
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("incbin")){
+					else if (preprocessor.equals("incbin")){
 						if (line.size() != 2)
 							throw new Exception("Wrong token count on line " + joinLine(line));
 						File file = new File(getPath(line.get(1)));
 						FileInputStream reader = new FileInputStream(file);
 						int length = (int)file.length();
 						if (length % 2 == 1)
-							length++; // without this we'll leave out the last byte
+							length++; // without this we'd leave out the last byte
 						byte[] octets = new byte[length];
 						reader.read(octets);
-						line = new ArrayList<String>();
 						line.add("DAT");
 						for (int i = 0; i < octets.length / 2; i++){
 							int word = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
 							line.add("0x" + Hexer.hex(word));
 						}
+						lines.add(line);
+						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("def") || preprocessor.equalsIgnoreCase("define") || preprocessor.equalsIgnoreCase("equ")){
+					else if (preprocessor.equals("def") || preprocessor.equals("define") || preprocessor.equals("equ")){
 						if (line.size() < 2 || line.size() > 3)
 							throw new Exception("Wrong token count on line " + joinLine(line));
 						String[] parts = line.get(1).split("\\s");
 						String name = parts[0];
 						int value = 1;
+						if (parts.length > 2)
+							throw new Exception("Wrong token count on line " + joinLine(line));
 						if (parts.length == 2){
 							MathExpression exp = buildExpression(parts[1]);
 							if (exp.numericValue() == null)
@@ -471,43 +476,39 @@ class Assembler{
 							value = exp.numericValue();
 						}
 						addDefinition(name, value);
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("undef")){
+					else if (preprocessor.equals("undef")){
 						if (line.size() != 2)
 							throw new Exception("Wrong token count on line " + joinLine(line));
 						String name = line.get(1);
 						dropDefinition(name);
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("echo")){
+					else if (preprocessor.equals("echo")){
 						line.remove(0);
 						System.out.println(joinLine(line));
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("error")){
+					else if (preprocessor.equals("error")){
 						line.remove(0);
 						throw new Exception(joinLine(line));
 					}
-					else if (preprocessor.equalsIgnoreCase("if") || preprocessor.equalsIgnoreCase("ifdef") || preprocessor.equalsIgnoreCase("ifndef")){
-						if (flowtop != null && ! flowtop.active()){
+					else if (preprocessor.equals("if") || preprocessor.equals("ifdef") || preprocessor.equals("ifndef")){
+						if (! flowtop.active()){
 							FlowFrame newtop = new FlowFrame(FlowFrame.IF);
 							newtop.active = false;
 							newtop.skiprest = true;
 							//System.out.println("Adding inactive if to stack");
 							flowstack.add(newtop);
-							line = new ArrayList<String>();
 							continue;
 						}
 						if (line.size() != 2)
 							throw new Exception("Wrong token count: " + joinLine(line));
 						String eval = line.get(1);
-						if (preprocessor.equalsIgnoreCase("ifdef"))
+						if (preprocessor.equals("ifdef"))
 							eval = "isdef(" + eval + ")";
-						else if (preprocessor.equalsIgnoreCase("ifndef"))
+						else if (preprocessor.equals("ifndef"))
 							eval = "!isdef(" + eval + ")";
 						MathExpression exp = buildExpression(eval);
 						if (exp.numericValue() == null)
@@ -518,15 +519,13 @@ class Assembler{
 						newtop.active = result;
 						newtop.skiprest = result;
 						flowstack.add(newtop);
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("elif") || preprocessor.equalsIgnoreCase("elsif")){
-						if (flowtop == null || ! flowtop.isIf())
+					else if (preprocessor.equals("elif") || preprocessor.equals("elsif")){
+						if (! flowtop.isIf())
 							throw new Exception(preprocessor + " in wrong context");
 						if (flowtop.skiprest){
 							flowtop.active = false;
-							line = new ArrayList<String>();
 							continue;
 						}
 						if (line.size() != 2)
@@ -538,29 +537,25 @@ class Assembler{
 						boolean result = exp.numericValue() != 0;
 						flowtop.active = result;
 						flowtop.skiprest = result;
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("else")){
-						if (flowtop == null || ! flowtop.isIf())
+					else if (preprocessor.equals("else")){
+						if (! flowtop.isIf())
 							throw new Exception(preprocessor + " in wrong context");
 						if (flowtop.skiprest){
 							flowtop.active = false;
-							line = new ArrayList<String>();
 							continue;
 						}
 						flowtop.active = true;
 						flowtop.skiprest = true;
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("rep")){
-						if (flowtop != null && ! flowtop.active()){
+					else if (preprocessor.equals("rep")){
+						if (! flowtop.active()){
 							//System.out.println("Adding inactive rep to stack");
 							FlowFrame rep = new FlowFrame(FlowFrame.REP);
 							rep.active = false;
 							flowstack.add(rep);
-							line = new ArrayList<String>();
 							continue;
 						}
 						if (line.size() != 2)
@@ -573,11 +568,48 @@ class Assembler{
 						rep.active = exp.numericValue() > 0;
 						rep.countDown = exp.numericValue() - 1;
 						flowstack.add(rep);
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("end")){
-						if (flowtop == null)
+					else if (preprocessor.equals("macro")){
+						if (! flowtop.active()){
+							//System.out.println("Adding inactive rep to stack");
+							FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
+							mac.active = false;
+							flowstack.add(mac);
+							continue;
+						}
+						if (line.size() == 1)
+							throw new Exception("Not enough tokens on line " + joinLine(line));
+						String name = "";
+						String firstToken = line.get(1);
+						for (int i = 0; i < firstToken.length(); i++){
+							char c = firstToken.charAt(i);
+							if (c == '('){
+								firstToken = firstToken.substring(i);
+								break;
+							}
+							else
+								name += c;
+						}
+						if (firstToken.length() == 0 || firstToken.charAt(0) != '(' || name.length() == 0)
+							throw new Exception("Macro definition is malformed");
+						List<String> params = new ArrayList<String>();
+						if (line.size() == 2)
+							params.add(firstToken.substring(1, firstToken.length() - 1));
+						else if (line.size() > 2){
+							params.add(firstToken.substring(1));
+							for (int i = 2; i < line.size() - 1; i++)
+								params.add(line.get(i));
+						}
+						FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
+						mac.active = false;
+						Macro m = new Macro(name, params, mac);
+						addMacro(name, m);
+						flowstack.add(mac);
+						continue;
+					}
+					else if (preprocessor.equals("end")){
+						if (flowtop.isBottom())
 							throw new Exception(preprocessor + " in wrong context");
 						if (! flowtop.isRep() || flowtop.countDown <= 0){
 							//System.out.println("Removing " + (flowtop.isRep() ? "rep" : "if") + " from stack");
@@ -594,10 +626,9 @@ class Assembler{
 						if (flowtop.countDown > 0){
 							//System.out.println("Looping: " + flowtop.countDown);
 						}
-						line = new ArrayList<String>();
 						continue;
 					}
-					else if (preprocessor.equalsIgnoreCase("org")){
+					else if (preprocessor.equals("org")){
 						if (line.size() != 2)
 							throw new Exception("Not enough tokens: " + joinLine(line));
 						String eval = line.get(1);
@@ -605,15 +636,14 @@ class Assembler{
 						if (exp.numericValue() == null)
 							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
 						org = exp.numericValue();
-						line = new ArrayList<String>();
 						continue;
 					}
 					else if (
-							preprocessor.equalsIgnoreCase("dw")
-							|| preprocessor.equalsIgnoreCase("dp")
-							|| preprocessor.equalsIgnoreCase("fill")
-							|| preprocessor.equalsIgnoreCase("ascii")
-							// || preprocessor.equalsIgnoreCase("align") ... hmm ... this one's gonna require some rework of the program
+							preprocessor.equals("dw")
+							|| preprocessor.equals("dp")
+							|| preprocessor.equals("fill")
+							|| preprocessor.equals("ascii")
+							// || preprocessor.equals("align") ... hmm ... this one's gonna require some rework of the program
 					){
 						line.set(0, "." + preprocessor.toUpperCase()); // normalize, but otherwise let the structurizer deal with it.
 					}
@@ -622,65 +652,100 @@ class Assembler{
 
 				}
 				if (line.size() == 0)
-					continue;
-				if (line.get(0).equalsIgnoreCase("DAT")){
-					// any size is fine
-				}
-				else if (line.size() > 3){
+					throw new Exception("Somehow ended up with a 0 length line");
+				if (! line.get(0).equalsIgnoreCase("DAT") && line.size() > 3)
 					throw new Exception("Too many tokens on line " + lines.size() + ": " + joinLine(line) + ", " + line);
-				}
 				lines.add(line);
-				line = new ArrayList<String>();
-				continue;
 			}
-			if (inComment)
-				continue;
-			if (token.equals(" ") && line.size() == 0 && expression.trim().length() > 0){ // first token ends at space, other tokens end at ,
-				expression = expression.trim();
-				line.add(expression);
-				expression = "";
-				continue;
-			}
-			if (token.equals(",")){
-				expression = expression.trim();
-				line.add(expression);
-				expression = "";
-				continue;
-			}
-			if (token.equals(";")){
-				inComment = true;
-				continue;
-			}
-			if (token.charAt(0) == '"'){
-				inQuotes = true;
-				boolean escaping = false;
-				while (tokens.hasMoreTokens()){
-					String subtoken = tokens.nextToken();
-					if (! escaping && subtoken.charAt(0) == '\\'){
-						escaping = true;
-					}
-					else if (! escaping && subtoken.charAt(0) == '"'){
-						token += subtoken;
-						break;
-					}
-					else
-						escaping = false;
-					token += subtoken;
-				}
-			}
-			if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
-				if (line.size() > 0)
-					throw new Exception("Label not at beginning of line " + token + " in " + joinLine(line));
-				addLabel(token.replaceAll("^:|:$", ""), lines.size(), org);
-				continue;
-			}
-			if (line.size() == 0 && token.equalsIgnoreCase("DAT")){
-				line = new ArrayList<String>();
-			}
-			expression += token;
+			if (flowstack.size() < startSize)
+				throw new Exception("There are too many ends");
+			if (flowstack.size() > startSize)
+				throw new Exception("There are not enough ends");
 		}
-		if (flowstack.size() > 0)
-			throw new Exception("Reached end of program without finding .end");
+
+		private boolean hasMoreLines()
+			throws Exception
+		{
+			queueLine();
+			return nextLine != null;
+		}
+
+		private List<String> nextLine()
+			throws Exception
+		{
+			queueLine();
+			List<String> line = nextLine;
+			nextLine = null;
+			return line;
+		}
+
+		private void queueLine()
+			throws Exception
+		{
+			if (nextLine != null)
+				return;
+			boolean inComment = false;
+			List<String> line = new ArrayList<String>();
+			String expression = "";
+			boolean inQuotes = false;
+			while (tokens.hasMoreTokens()){
+				String token = tokens.nextToken();
+				if (token.equals("\n")){
+					inComment = false;
+					if (expression.trim().length() > 0){
+						line.add(expression.trim());
+						expression = "";
+					}
+					if (line.size() == 0)
+						continue;
+					nextLine = line;
+					return;
+				}
+				if (inComment)
+					continue;
+				if (token.equals(",") || (token.equals(" ") && line.size() == 0 && expression.trim().length() > 0)){ // first token ends at space, other tokens end at ,
+					expression = expression.trim();
+					line.add(expression.trim());
+					expression = "";
+					continue;
+				}
+				if (token.equals(";")){
+					inComment = true;
+					continue;
+				}
+				if (token.charAt(0) == '"'){
+					inQuotes = true;
+					boolean escaping = false;
+					while (tokens.hasMoreTokens()){
+						String subtoken = tokens.nextToken();
+						if (! escaping && subtoken.charAt(0) == '\\'){
+							escaping = true;
+						}
+						else if (! escaping && subtoken.charAt(0) == '"'){
+							token += subtoken;
+							break;
+						}
+						else
+							escaping = false;
+						token += subtoken;
+					}
+				}
+				if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
+					if (line.size() > 0)
+						throw new Exception("Label not at beginning of line " + token + " in " + joinLine(line));
+					addLabel(token.replaceAll("^:|:$", ""), lines.size(), org);
+					continue;
+				}
+				expression += token;
+			}
+		}
+
+	}
+
+	private void lexize(String contents)
+		throws Exception
+	{
+		new Lexer(contents).lex();
 	}
 
 	private String getPath(String token)
@@ -699,6 +764,12 @@ class Assembler{
 		for (String token : line)
 			str += token + " ";
 		return str;
+	}
+
+	private class Macro{
+
+		public Macro(String name, List<String> params, FlowFrame lines){
+		}
 	}
 
 	private interface AssembleStructure{
