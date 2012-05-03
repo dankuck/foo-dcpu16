@@ -259,7 +259,7 @@ class Assembler{
 			public Integer interpret(String label){
 				if (registers.contains(label.toUpperCase()))
 					return null;
-				if (label.matches("'.'"))
+				if (label.matches("'\\.'"))
 					return (int)label.charAt(1);
 				Integer defined = definitions.get(label.toUpperCase());
 				if (defined != null)
@@ -338,6 +338,16 @@ class Assembler{
 		lexize(contents());
 	}
 
+	private class FlowFrame{
+		final static public int IF = 1;
+		final static public int REP = 2;
+		private int type;
+		public boolean active;
+		public boolean skiprest;
+		public FlowFrame(int type){ this.type = type; }
+		public boolean isIf(){ return type == IF; }
+	}
+
 	private void lexize(String contents)
 		throws Exception
 	{
@@ -347,10 +357,10 @@ class Assembler{
 		List<String> line = new ArrayList<String>();
 		String expression = "";
 		boolean inQuotes = false;
-		List<Boolean> ifstack = new ArrayList<Boolean>();
-		List<Boolean> ifskiprest = new ArrayList<Boolean>();
+		List<FlowFrame> flowstack = new ArrayList<FlowFrame>();
 		int org = 0;
 		while (tokens.hasMoreTokens()){
+			FlowFrame flowtop = flowstack.size() > 0 ? flowstack.get(flowstack.size() - 1) : null;
 			String token = tokens.nextToken();
 			if (token.equals("\n")){
 				inComment = false;
@@ -363,8 +373,8 @@ class Assembler{
 					continue;
 				boolean isPreprocessor = line.get(0).matches("#.*|\\..*");
 				String preprocessor = line.get(0).replaceAll("^#|^\\.", "");
-				if (ifstack.size() > 0){
-					boolean skippingLines = ! ifstack.get(ifstack.size() - 1);
+				if (flowtop != null && flowtop.isIf()){
+					boolean skippingLines = ! flowtop.active;
 					boolean isIfRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("end") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef"));
 					if (skippingLines && ! isIfRelated){
 						line = new ArrayList<String>();
@@ -403,12 +413,13 @@ class Assembler{
 					else if (preprocessor.equalsIgnoreCase("def") || preprocessor.equalsIgnoreCase("define") || preprocessor.equalsIgnoreCase("equ")){
 						if (line.size() < 2 || line.size() > 3)
 							throw new Exception("Wrong token count on line " + joinLine(line));
-						String name = line.get(1);
+						String[] parts = line.get(1).split("\\s");
+						String name = parts[0];
 						int value = 1;
-						if (line.size() == 3){
-							MathExpression exp = buildExpression(line.get(2));
+						if (parts.length == 2){
+							MathExpression exp = buildExpression(parts[1]);
 							if (exp.numericValue() == null)
-								throw new Exception("Couldn't evaluate " + line.get(2) + " => " + exp);
+								throw new Exception("Couldn't evaluate " + parts[1] + " => " + exp);
 							value = exp.numericValue();
 						}
 						addDefinition(name, value);
@@ -434,9 +445,11 @@ class Assembler{
 						throw new Exception(joinLine(line));
 					}
 					else if (preprocessor.equalsIgnoreCase("if") || preprocessor.equalsIgnoreCase("ifdef") || preprocessor.equalsIgnoreCase("ifndef")){
-						if (ifstack.size() > 0 && ! ifstack.get(ifstack.size() - 1)){
-							ifstack.add(false);
-							ifskiprest.add(true);
+						if (flowtop != null && ! flowtop.active){
+							FlowFrame newtop = new FlowFrame(FlowFrame.IF);
+							newtop.active = false;
+							newtop.skiprest = true;
+							flowstack.add(newtop);
 							line = new ArrayList<String>();
 							continue;
 						}
@@ -451,16 +464,18 @@ class Assembler{
 						if (exp.numericValue() == null)
 							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
 						boolean result = exp.numericValue() != 0;
-						ifstack.add(result);
-						ifskiprest.add(result);
+						FlowFrame newtop = new FlowFrame(FlowFrame.IF);
+						newtop.active = result;
+						newtop.skiprest = result;
+						flowstack.add(newtop);
 						line = new ArrayList<String>();
 						continue;
 					}
 					else if (preprocessor.equalsIgnoreCase("elif") || preprocessor.equalsIgnoreCase("elsif")){
-						if (ifstack.size() == 0)
+						if (flowtop == null || ! flowtop.isIf())
 							throw new Exception(preprocessor + " in wrong context");
-						if (ifskiprest.get(ifskiprest.size() - 1)){
-							ifstack.set(ifstack.size() - 1, false);
+						if (flowtop.skiprest){
+							flowtop.active = false;
 							line = new ArrayList<String>();
 							continue;
 						}
@@ -471,29 +486,28 @@ class Assembler{
 						if (exp.numericValue() == null)
 							throw new Exception("Couldn't evaluate " + eval + " => " + exp);
 						boolean result = exp.numericValue() != 0;
-						ifstack.set(ifstack.size() - 1, result);
-						ifskiprest.set(ifstack.size() - 1, result);
+						flowtop.active = result;
+						flowtop.skiprest = result;
 						line = new ArrayList<String>();
 						continue;
 					}
 					else if (preprocessor.equalsIgnoreCase("else")){
-						if (ifstack.size() == 0)
+						if (flowtop == null || ! flowtop.isIf())
 							throw new Exception(preprocessor + " in wrong context");
-						if (ifskiprest.get(ifskiprest.size() - 1)){
-							ifstack.set(ifstack.size() - 1, false);
+						if (flowtop.skiprest){
+							flowtop.active = false;
 							line = new ArrayList<String>();
 							continue;
 						}
-						ifstack.set(ifstack.size() - 1, true);
-						ifskiprest.set(ifstack.size() - 1, true);
+						flowtop.active = true;
+						flowtop.skiprest = true;
 						line = new ArrayList<String>();
 						continue;
 					}
 					else if (preprocessor.equalsIgnoreCase("end")){
-						if (ifstack.size() == 0)
+						if (flowtop == null)
 							throw new Exception(preprocessor + " in wrong context");
-						ifskiprest.remove(ifstack.size() - 1);
-						ifstack.remove(ifstack.size() - 1);
+						flowstack.remove(flowstack.size() - 1);
 						line = new ArrayList<String>();
 						continue;
 					}
@@ -579,7 +593,7 @@ class Assembler{
 			}
 			expression += token;
 		}
-		if (ifstack.size() > 0)
+		if (flowstack.size() > 0)
 			throw new Exception("Reached end of program without finding .end");
 	}
 
