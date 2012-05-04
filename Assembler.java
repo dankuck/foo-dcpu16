@@ -41,7 +41,8 @@ class Assembler{
 	}
 
 	private String filename;
-	private List<List <String>> lines;
+	private List<TextLine> lines;
+	private String currentGlobalLabel = "";
 	private HashMap<String, Integer> labelsToLines = new HashMap<String, Integer>();
 	private HashMap<String, Integer> labelOffsets = new HashMap<String, Integer>();
 	private HashMap<Integer, AssembleStructure> structures = new HashMap<Integer, AssembleStructure>();
@@ -221,13 +222,14 @@ class Assembler{
 	private int labelToByte(String label)
 		throws Exception
 	{
-		Integer line = labelsToLines.get(label.toUpperCase());
+		String globalLabel = label.charAt(0) == '_' ? currentGlobalLabel + label.toUpperCase() : label.toUpperCase();
+		Integer line = labelsToLines.get(globalLabel);
 		if (line == null)
 			throw new Exception("Undefined label " + label);
 		Integer alignment = linesToBytes.get(line);
 		if (alignment == null)
 			throw new Exception("Label refers to non-existant line: " + label);
-		return alignment + labelOffsets.get(label.toUpperCase());
+		return alignment + labelOffsets.get(globalLabel);
 	}
 
 	public boolean isNumericExpression(String expression){
@@ -245,12 +247,11 @@ class Assembler{
 		throw new Exception("Not a numeric expression: " + expression);
 	}
 
-	public int interpretExpression(String expression)
+	public MathExpression buildExpression(String string, String globalLabel)
 		throws Exception
 	{
-		if (isNumericExpression(expression))
-			return interpretNumber(expression);
-		return labelToByte(expression);
+		currentGlobalLabel = globalLabel;
+		return buildExpression(string);
 	}
 
 	public MathExpression buildExpression(String string)
@@ -313,7 +314,7 @@ class Assembler{
 			else if (instruction.equalsIgnoreCase(".FILL"))
 				structures.put(i, new AssembleFill(lines.get(i)));
 			else{
-				structures.put(i, new AssembleInstruction(t));
+				structures.put(i, new AssembleInstruction(lines.get(i)));
 			}
 		}
 	}
@@ -321,10 +322,17 @@ class Assembler{
 	private void addLabel(String label, int line, int labelOffset)
 		throws Exception
 	{
+		boolean isLocal = false;
+		if (label.charAt(0) == '_'){
+			label = currentGlobalLabel + label;
+			isLocal = true;
+		}
 		if (definitions.get(label.toUpperCase()) != null)
 			throw new Exception("Cannot redefine " + label + " unless you undefine it first.");
 		if (labelsToLines.get(label.toUpperCase()) != null)
 			throw new Exception("Cannot redefine " + label);
+		if (! isLocal)
+			currentGlobalLabel = label.toUpperCase();
 		labelsToLines.put(label.toUpperCase(), line);
 		labelOffsets.put(label.toUpperCase(), labelOffset);
 	}
@@ -348,7 +356,7 @@ class Assembler{
 	private void lexize()
 		throws Exception
 	{
-		lines = new ArrayList<List<String>>();
+		lines = new ArrayList<TextLine>();
 		lexize(contents());
 	}
 
@@ -362,12 +370,12 @@ class Assembler{
 		public boolean skiprest;
 		public int countDown;
 		public int currentLine;
-		public List<List<String>> lines;
+		public List<TextLine> lines;
 		public boolean runningFromAddedLines;
 		public FlowFrame(int type){
 			this.type = type;
 			if (isRep() || isMacro())
-				lines = new ArrayList<List<String>>();
+				lines = new ArrayList<TextLine>();
 		}
 		public boolean isIf(){
 			return type == IF;
@@ -383,16 +391,16 @@ class Assembler{
 		}
 		public void addLine(List<String> line){
 			if (isRep() || isMacro())
-				lines.add(new ArrayList<String>(line));
+				lines.add(new TextLine(line));
 		}
-		public List<String> nextLine(){
+		public TextLine nextLine(){
 			if (lines.size() == 0)
 				throw new RuntimeException("No lines captured... not even .end");
 			if (isRep() && currentLine >= lines.size()){
 				currentLine = 0;
 				countDown--;
 			}
-			return new ArrayList<String>(lines.get(currentLine++));
+			return new TextLine(lines.get(currentLine++));
 		}
 		public boolean hasMoreLines(){
 			if (isRep())
@@ -409,7 +417,7 @@ class Assembler{
 		StringTokenizer tokens;
 		List<FlowFrame> flowstack = new ArrayList<FlowFrame>();
 		List<FlowFrame> lineSources = new ArrayList<FlowFrame>();
-		List<String> nextLine;
+		TextLine nextLine;
 		int org = 0;
 
 		public Lexer(String contents){
@@ -437,7 +445,7 @@ class Assembler{
 				if (flowtop == null)
 					throw new Exception("Something went wrong with the flowstack.");
 				FlowFrame lineSource = lineSource();
-				List<String> line;
+				TextLine line;
 				if (lineSource != null){
 					line = lineSource.nextLine();
 				}
@@ -445,7 +453,7 @@ class Assembler{
 					break;
 				else
 					line = nextLine();
-				//System.out.println("- " + joinLine(line));
+				System.out.println("- " + line);
 				for (int i = flowstack.size() - 1; i >= 0; i--){
 					FlowFrame r = flowstack.get(i);
 					if (r.runningFromAddedLines)
@@ -473,7 +481,7 @@ class Assembler{
 				if (line.size() == 0)
 					throw new Exception("Somehow ended up with a 0 length line");
 				if (! line.get(0).equalsIgnoreCase("DAT") && line.size() > 3)
-					throw new Exception("Too many tokens on line " + lines.size() + ": " + joinLine(line) + ", " + line);
+					throw new Exception("Too many tokens on line " + lines.size() + ": " + line);
 				lines.add(line);
 			}
 			if (flowstack.size() < startSize)
@@ -494,14 +502,14 @@ class Assembler{
 			return macro.interpolate(params);
 		}
 
-		private void preprocess(String preprocessor, List<String> line)
+		private void preprocess(String preprocessor, TextLine line)
 			throws Exception
 		{
 			FlowFrame flowtop = flowtop();
 			FlowFrame lineSource = lineSource();
 			if (preprocessor.equals("include")){
 				if (line.size() != 2)
-					throw new Exception("Wrong token count on line " + joinLine(line));
+					throw new Exception("Wrong token count on line " + line);
 				String path = getPath(line.get(1));
 				if (! new File(path).exists())
 					System.out.println(path + " not exists");
@@ -511,7 +519,7 @@ class Assembler{
 			}
 			else if (preprocessor.equals("incbin")){
 				if (line.size() != 2)
-					throw new Exception("Wrong token count on line " + joinLine(line));
+					throw new Exception("Wrong token count on line " + line);
 				File file = new File(getPath(line.get(1)));
 				FileInputStream reader = new FileInputStream(file);
 				int length = (int)file.length();
@@ -529,12 +537,12 @@ class Assembler{
 			}
 			else if (preprocessor.equals("def") || preprocessor.equals("define") || preprocessor.equals("equ")){
 				if (line.size() < 2 || line.size() > 3)
-					throw new Exception("Wrong token count on line " + joinLine(line));
+					throw new Exception("Wrong token count on line " + line);
 				String[] parts = line.get(1).split("\\s");
 				String name = parts[0];
 				int value = 1;
 				if (parts.length > 2)
-					throw new Exception("Wrong token count on line " + joinLine(line));
+					throw new Exception("Wrong token count on line " + line);
 				if (parts.length == 2){
 					MathExpression exp = buildExpression(parts[1]);
 					if (exp.numericValue() == null)
@@ -546,19 +554,19 @@ class Assembler{
 			}
 			else if (preprocessor.equals("undef")){
 				if (line.size() != 2)
-					throw new Exception("Wrong token count on line " + joinLine(line));
+					throw new Exception("Wrong token count on line " + line);
 				String name = line.get(1);
 				dropDefinition(name);
 				return;
 			}
 			else if (preprocessor.equals("echo")){
 				line.remove(0);
-				System.out.println(joinLine(line));
+				System.out.println(line);
 				return;
 			}
 			else if (preprocessor.equals("error")){
 				line.remove(0);
-				throw new Exception(joinLine(line));
+				throw new Exception(line.toString());
 			}
 			else if (preprocessor.equals("if") || preprocessor.equals("ifdef") || preprocessor.equals("ifndef")){
 				if (! flowtop.active){
@@ -570,7 +578,7 @@ class Assembler{
 					return;
 				}
 				if (line.size() != 2)
-					throw new Exception("Wrong token count: " + joinLine(line));
+					throw new Exception("Wrong token count: " + line);
 				String eval = line.get(1);
 				if (preprocessor.equals("ifdef"))
 					eval = "isdef(" + eval + ")";
@@ -595,7 +603,7 @@ class Assembler{
 					return;
 				}
 				if (line.size() != 2)
-					throw new Exception("Wrong token count: " + joinLine(line));
+					throw new Exception("Wrong token count: " + line);
 				String eval = line.get(1);
 				MathExpression exp = buildExpression(eval);
 				if (exp.numericValue() == null)
@@ -625,7 +633,7 @@ class Assembler{
 					return;
 				}
 				if (line.size() != 2)
-					throw new Exception("Wrong token count: " + joinLine(line));
+					throw new Exception("Wrong token count: " + line);
 				MathExpression exp = buildExpression(line.get(1));
 				if (exp.numericValue() == null)
 					throw new Exception("Expression doesn't literalize: " + line.get(1) + " => " + exp);
@@ -677,7 +685,7 @@ class Assembler{
 			}
 			else if (preprocessor.equals("org")){
 				if (line.size() != 2)
-					throw new Exception("Not enough tokens: " + joinLine(line));
+					throw new Exception("Not enough tokens: " + line);
 				String eval = line.get(1);
 				MathExpression exp = buildExpression(eval);
 				if (exp.numericValue() == null)
@@ -707,11 +715,11 @@ class Assembler{
 			return nextLine != null;
 		}
 
-		private List<String> nextLine()
+		private TextLine nextLine()
 			throws Exception
 		{
 			queueLine();
-			List<String> line = nextLine;
+			TextLine line = nextLine;
 			nextLine = null;
 			return line;
 		}
@@ -722,7 +730,8 @@ class Assembler{
 			if (nextLine != null)
 				return;
 			boolean inComment = false;
-			List<String> line = new ArrayList<String>();
+			TextLine line = new TextLine();
+			line.globalLabel(currentGlobalLabel);
 			String expression = "";
 			boolean inQuotes = false;
 			while (tokens.hasMoreTokens()){
@@ -769,8 +778,9 @@ class Assembler{
 				}
 				if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
 					if (line.size() > 0)
-						throw new Exception("Label not at beginning of line " + token + " in " + joinLine(line));
+						throw new Exception("Label not at beginning of line " + token + " in " + line);
 					addLabel(token.replaceAll("^:|:$", ""), lines.size(), org);
+					line.globalLabel(currentGlobalLabel);
 					continue;
 				}
 				expression += token;
@@ -836,9 +846,14 @@ class Assembler{
 	}
 
 	public String joinLine(List<String> line){
+		if (line.size() == 0)
+			return "";
+		line = new ArrayList<String>(line);
+		String last = line.remove(line.size() - 1);
 		String str = "";
 		for (String token : line)
 			str += token + " ";
+		str += last;
 		return str;
 	}
 
@@ -898,11 +913,11 @@ class Assembler{
 		private int length;
 		private int value = 0;
 
-		public AssembleFill(List<String> line)
+		public AssembleFill(TextLine line)
 			throws Exception
 		{
 			if (line.size() == 1 || line.size() > 3)
-				throw new Exception("Wrong token count: " + joinLine(line));
+				throw new Exception("Wrong token count: " + line);
 			MathExpression lengthExp = buildExpression(line.get(1));
 			if (lengthExp.numericValue() == null)
 				throw new Exception("First argument not understood: " + line.get(1) + " => " + lengthExp);
@@ -943,11 +958,11 @@ class Assembler{
 
 		private int boundary;
 
-		public AssembleAlign(List<String> line)
+		public AssembleAlign(TextLine line)
 			throws Exception
 		{
 			if (line.size() != 2)
-				throw new Exception("Not enough tokens " + joinLine(line));
+				throw new Exception("Not enough tokens " + line);
 			MathExpression exp = buildExpression(line.get(1));
 			if (exp.numericValue() == null)
 				throw new Exception("Couldn't literalize " + line.get(1) + " => " + exp);
@@ -976,7 +991,7 @@ class Assembler{
 		private int[][] data;
 		private boolean pack = false;
 
-		public AssembleData(List<String> line)
+		public AssembleData(TextLine line)
 			throws Exception
 		{
 			this.pack = line.remove(0).equals(".DP");
@@ -1209,13 +1224,13 @@ class Assembler{
 			}
 		}
 
-		public AssembleInstruction(String[] line){
+		public AssembleInstruction(TextLine line){
 			init();
-			instruction = line[0];
-			if (line.length > 1)
-				a = new AssembleInstructionData(line[1]);
-			if (line.length > 2)
-				b = new AssembleInstructionData(line[2]);
+			instruction = line.get(0);
+			if (line.size() > 1)
+				a = new AssembleInstructionData(line.get(1), line.globalLabel);
+			if (line.size() > 2)
+				b = new AssembleInstructionData(line.get(2), line.globalLabel);
 		}
 
 		public int length(int currentPosition)
@@ -1297,9 +1312,11 @@ class Assembler{
 
 			private String data;
 			private Integer toByte;
+			private String globalLabel;
 
-			public AssembleInstructionData(String data){
+			public AssembleInstructionData(String data, String globalLabel){
 				this.data = data.trim();
+				this.globalLabel = globalLabel;
 			}
 
 			public String toString(){
@@ -1314,7 +1331,7 @@ class Assembler{
 				Integer easy = staticTransforms.get(data.toUpperCase());
 				if (easy != null)
 					return toByte = easy;
-				MathExpression exp = buildExpression(data);
+				MathExpression exp = buildExpression(data, globalLabel);
 				String register = findRegister(exp);
 				if (exp.isParenthesized() && data.charAt(0) == '['){
 					if (register != null){
@@ -1364,7 +1381,7 @@ class Assembler{
 				if (! hasExtraByte())
 					throw new Exception("extraByte() requested but none is appropriate");
 				if (toByte >= 0x10 && toByte <= 0x17){
-					MathExpression exp = buildExpression(data);
+					MathExpression exp = buildExpression(data, globalLabel);
 					List<String> registers = exp.labels();
 					if (registers.size() != 1)
 						throw new Exception(registers.size() + " registers in expression: " + data + " => " + exp);
@@ -1387,7 +1404,7 @@ class Assembler{
 					throw new Exception("Expression doesn't simplify to [literal+register] format: " + data + " => " + exp);
 				}
 				else if (toByte == 0x1E || toByte == 0x1F){
-					MathExpression exp = buildExpression(data);
+					MathExpression exp = buildExpression(data, globalLabel);
 					if (exp.numericValue() == null)
 						throw new Exception("Expression doesn't simplify to literal: " + data + " => " + exp);
 					return exp.numericValue();
@@ -1402,6 +1419,31 @@ class Assembler{
 				int toByte = toByte();
 				return ! ((toByte >= 0x0 && toByte <= 0xF) || (toByte >= 0x18 && toByte <= 0x1D) || (toByte >= 0x20 && toByte <= 0x3F));
 			}
+		}
+	}
+
+	private class TextLine extends ArrayList<String>{
+
+		private String globalLabel;
+
+		public TextLine(){
+			super();
+		}
+
+		public TextLine(List<String> copy){ // includes TextLine(TextLine)
+			super(copy);
+		}
+
+		public void globalLabel(String globalLabel){
+			this.globalLabel = globalLabel;
+		}
+
+		public String globalLabel(){
+			return globalLabel;
+		}
+
+		public String toString(){
+			return joinLine(this);
 		}
 	}
 
