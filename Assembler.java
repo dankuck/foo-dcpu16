@@ -54,6 +54,7 @@ class Assembler{
 	private Assembler.Includer bracketIncluder = new Assembler.StringIncluder();
 	private Assembler.Includer stringIncluder = new Assembler.StringIncluder();
 	private HashMap<String, Integer> definitions = new HashMap<String, Integer>();
+	private HashMap<String, Macro> macros = new HashMap<String, Macro>();
 
 	private void init(){
 		if (registers == null){
@@ -318,12 +319,18 @@ class Assembler{
 		throws Exception
 	{
 		if (definitions.get(label.toUpperCase()) != null)
-			throw new Exception("Cannot redefine " + label + ". Undefine it first.");
+			throw new Exception("Cannot redefine " + label + " unless you undefine it first.");
+		if (labelsToLines.get(label.toUpperCase()) != null)
+			throw new Exception("Cannot redefine " + label);
 		labelsToLines.put(label.toUpperCase(), line);
 		labelOffsets.put(label.toUpperCase(), labelOffset);
 	}
 
-	private void addDefinition(String name, int value){
+	private void addDefinition(String name, int value)
+		throws Exception
+	{
+		if (definitions.get(name.toUpperCase()) != null)
+			throw new Exception("Cannot redefine " + name + " unless you undefine it first.");
 		definitions.put(name.toUpperCase(), value);
 	}
 
@@ -332,6 +339,7 @@ class Assembler{
 	}
 
 	private void addMacro(String name, Macro macro){
+		macros.put(name.toUpperCase(), macro);
 	}
 
 	private void lexize()
@@ -351,12 +359,12 @@ class Assembler{
 		public boolean skiprest;
 		public int countDown;
 		public int currentLine;
-		public List<List<String>> repeatLines;
-		public boolean repeating;
+		public List<List<String>> lines;
+		public boolean runningFromAddedLines;
 		public FlowFrame(int type){
 			this.type = type;
 			if (isRep() || isMacro())
-				repeatLines = new ArrayList<List<String>>();
+				lines = new ArrayList<List<String>>();
 		}
 		public boolean isIf(){
 			return type == IF;
@@ -375,16 +383,24 @@ class Assembler{
 		}
 		public void addLine(List<String> line){
 			if (isRep() || isMacro())
-				repeatLines.add(new ArrayList<String>(line));
+				lines.add(new ArrayList<String>(line));
 		}
 		public List<String> nextLine(){
-			if (repeatLines.size() == 0)
+			if (lines.size() == 0)
 				throw new RuntimeException("No lines captured... not even .end");
-			if (currentLine >= repeatLines.size()){
+			if (isRep() && currentLine >= lines.size()){
 				currentLine = 0;
 				countDown--;
 			}
-			return new ArrayList<String>(repeatLines.get(currentLine++));
+			return new ArrayList<String>(lines.get(currentLine++));
+		}
+		public boolean hasMoreLines(){
+			if (isRep())
+				return countDown > 0 || currentLine < lines.size();
+			return currentLine < lines.size();
+		}
+		public void resetLine(){
+			currentLine = 0;
 		}
 	}
 
@@ -392,7 +408,7 @@ class Assembler{
 
 		StringTokenizer tokens;
 		List<FlowFrame> flowstack = new ArrayList<FlowFrame>();
-		List<FlowFrame> repeaters = new ArrayList<FlowFrame>();
+		List<FlowFrame> lineSources = new ArrayList<FlowFrame>();
 		List<String> nextLine;
 		int org = 0;
 
@@ -405,8 +421,8 @@ class Assembler{
 			return flowstack.size() > 0 ? flowstack.get(flowstack.size() - 1) : null;
 		}
 
-		private FlowFrame repeater(){
-			return repeaters.size() > 0 ? repeaters.get(repeaters.size() - 1) : null;
+		private FlowFrame lineSource(){
+			return lineSources.size() > 0 ? lineSources.get(lineSources.size() - 1) : null;
 		}
 
 		public void lex()
@@ -420,17 +436,19 @@ class Assembler{
 				FlowFrame flowtop = flowtop();
 				if (flowtop == null)
 					throw new Exception("Something went wrong with the flowstack.");
-				FlowFrame repeater = repeater();
+				FlowFrame lineSource = lineSource();
 				List<String> line;
-				if (repeater != null)
-					line = repeater.nextLine();
+				if (lineSource != null){
+					line = lineSource.nextLine();
+				}
 				else if (! hasMoreLines())
 					break;
 				else
 					line = nextLine();
+				System.out.println("- " + joinLine(line));
 				for (int i = flowstack.size() - 1; i >= 0; i--){
 					FlowFrame r = flowstack.get(i);
-					if (r.repeating)
+					if (r.runningFromAddedLines)
 						break;
 					r.addLine(line);
 				}
@@ -445,7 +463,11 @@ class Assembler{
 					continue;
 				}
 				if (line.get(0).indexOf('(') >= 0){
-					callMacro(line);
+					FlowFrame calledMacro = callMacro(line);
+					calledMacro.active = true;
+					calledMacro.runningFromAddedLines = true;
+					flowstack.add(calledMacro);
+					lineSources.add(calledMacro);
 					continue;
 				}
 				if (line.size() == 0)
@@ -460,17 +482,23 @@ class Assembler{
 				throw new Exception("There are not enough ends");
 		}
 
-		private void callMacro(List<String> line)
+		private FlowFrame callMacro(List<String> line)
 			throws Exception
 		{
-			throw new Exception("Can't handle macros yet.");
+			List<String> params = interpretMacroParts(line);
+			//System.out.println("Calling " + joinLine(params));
+			String name = params.remove(0);
+			Macro macro = macros.get(name.toUpperCase());
+			if (macro == null)
+				throw new Exception("Undefined macro");
+			return macro.interpolate(params);
 		}
 
 		private void preprocess(String preprocessor, List<String> line)
 			throws Exception
 		{
 			FlowFrame flowtop = flowtop();
-			FlowFrame repeater = repeater();
+			FlowFrame lineSource = lineSource();
 			if (preprocessor.equals("include")){
 				if (line.size() != 2)
 					throw new Exception("Wrong token count on line " + joinLine(line));
@@ -603,8 +631,8 @@ class Assembler{
 					throw new Exception("Expression doesn't literalize: " + line.get(1) + " => " + exp);
 				//System.out.println("Adding active rep to stack");
 				FlowFrame rep = new FlowFrame(FlowFrame.REP);
-				rep.active = exp.numericValue() > 0;
-				rep.countDown = exp.numericValue() - 1;
+				rep.active = false;
+				rep.countDown = exp.numericValue();
 				flowstack.add(rep);
 				return;
 			}
@@ -616,29 +644,9 @@ class Assembler{
 					flowstack.add(mac);
 					return;
 				}
-				if (line.size() == 1)
-					throw new Exception("Not enough tokens on line " + joinLine(line));
-				String name = "";
-				String firstToken = line.get(1);
-				for (int i = 0; i < firstToken.length(); i++){
-					char c = firstToken.charAt(i);
-					if (c == '('){
-						firstToken = firstToken.substring(i);
-						break;
-					}
-					else
-						name += c;
-				}
-				if (firstToken.length() == 0 || firstToken.charAt(0) != '(' || name.length() == 0)
-					throw new Exception("Macro definition is malformed");
-				List<String> params = new ArrayList<String>();
-				if (line.size() == 2)
-					params.add(firstToken.substring(1, firstToken.length() - 1));
-				else if (line.size() > 2){
-					params.add(firstToken.substring(1));
-					for (int i = 2; i < line.size() - 1; i++)
-						params.add(line.get(i));
-				}
+				line.remove(0);
+				List<String> params = interpretMacroParts(line);
+				String name = params.remove(0);
 				FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
 				mac.active = false;
 				Macro m = new Macro(name, params, mac);
@@ -651,15 +659,16 @@ class Assembler{
 					throw new Exception(preprocessor + " in wrong context");
 				if (! flowtop.isRep() || flowtop.countDown <= 0){
 					//System.out.println("Removing " + (flowtop.isRep() ? "rep" : "if") + " from stack");
-					if (repeater == flowtop)
-						repeaters.remove(repeaters.size() - 1);
+					if (lineSource == flowtop)
+						lineSources.remove(lineSources.size() - 1);
 					flowstack.remove(flowstack.size() - 1);
 				}
-				else if (flowtop.isRep() && ! flowtop.repeating){
+				else if (flowtop.isRep() && ! flowtop.runningFromAddedLines){
 					//System.out.println("First repeat (second run)");
-					flowtop.repeating = true; // start repeating.
+					flowtop.runningFromAddedLines = true; // start repeating.
 					flowtop.countDown--;
-					repeaters.add(flowtop);
+					flowtop.active = true;
+					lineSources.add(flowtop);
 				}
 				if (flowtop.countDown > 0){
 					//System.out.println("Looping: " + flowtop.countDown);
@@ -770,6 +779,45 @@ class Assembler{
 
 	}
 
+	public List<String> interpretMacroParts(List<String> line)
+		throws Exception
+	{
+		if (line.size() == 0)
+			throw new Exception("Not enough tokens on line " + joinLine(line));
+		String name = "";
+		String firstToken = line.get(0);
+		for (int i = 0; i < firstToken.length(); i++){
+			char c = firstToken.charAt(i);
+			if (c == '('){
+				firstToken = firstToken.substring(i);
+				break;
+			}
+			else
+				name += c;
+		}
+		if (firstToken.length() == 0 || firstToken.charAt(0) != '(' || name.length() == 0)
+			throw new Exception("Macro definition is malformed");
+		List<String> params = new ArrayList<String>();
+		if (line.size() == 1){
+			String param = firstToken.substring(1, firstToken.length() - 1);
+			if (param.length() > 0)
+				params.add(param);
+		}
+		else{
+			String param = firstToken.substring(1);
+			if (param.length() > 0)
+				params.add(param);
+			for (int i = 1; i < line.size() - 1; i++)
+				params.add(line.get(i));
+			String lastToken = line.get(line.size() - 1);
+			params.add(lastToken.substring(0, lastToken.length() - 1));
+		}
+		List<String> parts = new ArrayList<String>();
+		parts.add(name);
+		parts.addAll(params);
+		return parts;
+	}
+
 	private void lexize(String contents)
 		throws Exception
 	{
@@ -796,7 +844,39 @@ class Assembler{
 
 	private class Macro{
 
+		private String name;
+		private List<String> params;
+		private FlowFrame lines;
+
 		public Macro(String name, List<String> params, FlowFrame lines){
+			this.name = name;
+			this.params = params;
+			this.lines = lines;
+		}
+
+		public FlowFrame interpolate(List<String> substitutions)
+			throws Exception
+		{
+			if (params.size() != substitutions.size())
+				throw new Exception("Substitutions size doesn't match parameter size");
+			HashMap<String, String> regexes = new HashMap<String, String>();
+			for (int i = 0; i < params.size(); i++)
+				regexes.put("\\b" + params.get(i).replace("\\", "\\\\").replaceAll("([^a-zA-Z0-9])", "\\\\$1") + "\\b", substitutions.get(i));
+			FlowFrame frame = new FlowFrame(FlowFrame.MACRO);
+			while (lines.hasMoreLines()){
+				List<String> line = lines.nextLine();
+				for (int i = 0; i < line.size(); i++){
+					System.out.println("Replacing: " + line.get(i));
+					for (Map.Entry<String, String> regex : regexes.entrySet()){
+						System.out.println(" sub " + regex.getKey() + " with " + regex.getValue());
+						line.set(i, line.get(i).replaceAll(regex.getKey(), regex.getValue()));
+					}
+					System.out.println("Replaced: " + line.get(i));
+				}
+				frame.addLine(line);
+			}
+			lines.resetLine();
+			return frame;
 		}
 	}
 
