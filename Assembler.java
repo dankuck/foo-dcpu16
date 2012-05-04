@@ -186,8 +186,8 @@ class Assembler{
 		int position = 0;
 		for (int i = 0; i < lines.size(); i++){
 			AssembleStructure s = structures.get(i);
-			System.arraycopy(s.toBytes(position), 0, program, position, s.length());
-			position += s.length();
+			System.arraycopy(s.toBytes(position), 0, program, position, s.length(position));
+			position += s.length(position);
 		}
 	}
 
@@ -196,8 +196,9 @@ class Assembler{
 		throws Exception
 	{
 		int length = 0;
-		for (int i = 0; i < lines.size(); i++)
-			length += structures.get(i).length();
+		for (int i = 0; i < lines.size(); i++){
+			length += structures.get(i).length(length);
+		}
 		return length;
 	}
 
@@ -206,7 +207,7 @@ class Assembler{
 	{
 		for (int i = 0; i < lines.size(); i++){
 			AssembleStructure s = structures.get(i);
-			System.out.println(s + " ; " + s.length() + " byte(s) ; " + (labelsAligned ? Hexer.hexArray(s.toBytes()) + " ; " + s.toHexParts() : ""));
+			System.out.println(s + " ; " + s.length(0) + " byte(s) ; " + (labelsAligned ? Hexer.hexArray(s.toBytes(0)) + " ; " + s.toHexParts() : ""));
 		}
 	}
 
@@ -293,7 +294,7 @@ class Assembler{
 		int alignment = 0;
 		for (int i = 0; i < structures.size(); i++){
 			linesToBytes.put(i, alignment);
-			alignment += structures.get(i).length();
+			alignment += structures.get(i).length(alignment);
 		}
 		labelsAligned = true;
 	}
@@ -305,8 +306,10 @@ class Assembler{
 			String[] t = new String[lines.get(i).size()];
 			lines.get(i).toArray(t);
 			String instruction = lines.get(i).get(0);
-			if (instruction.equalsIgnoreCase("DAT") || instruction.equalsIgnoreCase(".DW") || instruction.equalsIgnoreCase(".DP") || instruction.equalsIgnoreCase(".ASCII"))
-				structures.put(i, new AssembleData(lines.get(i), instruction.equalsIgnoreCase(".DP")));
+			if (instruction.equalsIgnoreCase(".ALIGN"))
+				structures.put(i, new AssembleAlign(lines.get(i)));
+			else if (instruction.equalsIgnoreCase("DAT") || instruction.equalsIgnoreCase(".DW") || instruction.equalsIgnoreCase(".DP") || instruction.equalsIgnoreCase(".ASCII"))
+				structures.put(i, new AssembleData(lines.get(i)));
 			else if (instruction.equalsIgnoreCase(".FILL"))
 				structures.put(i, new AssembleFill(lines.get(i)));
 			else{
@@ -378,9 +381,6 @@ class Assembler{
 		public boolean isBottom(){
 			return type == BOTTOM;
 		}
-		public boolean active(){
-			return active;
-		}
 		public void addLine(List<String> line){
 			if (isRep() || isMacro())
 				lines.add(new ArrayList<String>(line));
@@ -445,7 +445,7 @@ class Assembler{
 					break;
 				else
 					line = nextLine();
-				System.out.println("- " + joinLine(line));
+				//System.out.println("- " + joinLine(line));
 				for (int i = flowstack.size() - 1; i >= 0; i--){
 					FlowFrame r = flowstack.get(i);
 					if (r.runningFromAddedLines)
@@ -454,7 +454,7 @@ class Assembler{
 				}
 				boolean isPreprocessor = line.get(0).matches("#.*|\\..*");
 				String preprocessor = line.get(0).replaceAll("^#|^\\.", "").toLowerCase();
-				boolean skippingLines = ! flowtop.active();
+				boolean skippingLines = ! flowtop.active;
 				boolean isFlowRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef") || preprocessor.equals("rep") || preprocessor.equals("macro") || preprocessor.equals("end"));
 				if (skippingLines && ! isFlowRelated)
 					continue;
@@ -561,7 +561,7 @@ class Assembler{
 				throw new Exception(joinLine(line));
 			}
 			else if (preprocessor.equals("if") || preprocessor.equals("ifdef") || preprocessor.equals("ifndef")){
-				if (! flowtop.active()){
+				if (! flowtop.active){
 					FlowFrame newtop = new FlowFrame(FlowFrame.IF);
 					newtop.active = false;
 					newtop.skiprest = true;
@@ -617,7 +617,7 @@ class Assembler{
 				return;
 			}
 			else if (preprocessor.equals("rep")){
-				if (! flowtop.active()){
+				if (! flowtop.active){
 					//System.out.println("Adding inactive rep to stack");
 					FlowFrame rep = new FlowFrame(FlowFrame.REP);
 					rep.active = false;
@@ -637,7 +637,7 @@ class Assembler{
 				return;
 			}
 			else if (preprocessor.equals("macro")){
-				if (! flowtop.active()){
+				if (! flowtop.active){
 					//System.out.println("Adding inactive rep to stack");
 					FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
 					mac.active = false;
@@ -690,7 +690,7 @@ class Assembler{
 					|| preprocessor.equals("dp")
 					|| preprocessor.equals("fill")
 					|| preprocessor.equals("ascii")
-					// || preprocessor.equals("align") ... hmm ... this one's gonna require some rework of the program
+					|| preprocessor.equals("align")
 			){
 				line.set(0, "." + preprocessor.toUpperCase()); // normalize, but otherwise let the structurizer deal with it.
 				lines.add(line);
@@ -866,12 +866,12 @@ class Assembler{
 			while (lines.hasMoreLines()){
 				List<String> line = lines.nextLine();
 				for (int i = 0; i < line.size(); i++){
-					System.out.println("Replacing: " + line.get(i));
+					//System.out.println("Replacing: " + line.get(i));
 					for (Map.Entry<String, String> regex : regexes.entrySet()){
-						System.out.println(" sub " + regex.getKey() + " with " + regex.getValue());
+						//System.out.println(" sub " + regex.getKey() + " with " + regex.getValue());
 						line.set(i, line.get(i).replaceAll(regex.getKey(), regex.getValue()));
 					}
-					System.out.println("Replaced: " + line.get(i));
+					//System.out.println("Replaced: " + line.get(i));
 				}
 				frame.addLine(line);
 			}
@@ -882,16 +882,13 @@ class Assembler{
 
 	private interface AssembleStructure{
 
-		public int length()
+		public int length(int currentPosition)
 			throws Exception;
 
 		public String toHexParts()
 			throws Exception;
 
-		public int[] toBytes()
-			throws Exception;
-
-		public int[] toBytes(int position)
+		public int[] toBytes(int currentPosition)
 			throws Exception;
 
 	}
@@ -918,7 +915,7 @@ class Assembler{
 			}
 		}
 
-		public int length()
+		public int length(int currentPosition)
 			throws Exception
 		{
 			return length;
@@ -927,16 +924,10 @@ class Assembler{
 		public String toHexParts()
 			throws Exception
 		{
-			return Hexer.hexArray(toBytes());
+			return Hexer.hexArray(toBytes(0));
 		}
 
-		public int[] toBytes(int position)
-			throws Exception
-		{
-			return toBytes();
-		}
-
-		public int[] toBytes()
+		public int[] toBytes(int currentPosition)
 			throws Exception
 		{
 			int[] bytes = new int[length];
@@ -948,16 +939,47 @@ class Assembler{
 
 	}
 
+	private class AssembleAlign implements AssembleStructure{
+
+		private int boundary;
+
+		public AssembleAlign(List<String> line)
+			throws Exception
+		{
+			if (line.size() != 2)
+				throw new Exception("Not enough tokens " + joinLine(line));
+			MathExpression exp = buildExpression(line.get(1));
+			if (exp.numericValue() == null)
+				throw new Exception("Couldn't literalize " + line.get(1) + " => " + exp);
+			boundary = exp.numericValue();
+		}
+
+		public int length(int position){
+			return boundary - (position % boundary);
+		}
+
+		public String toHexParts()
+			throws Exception
+		{
+			return "";
+		}
+
+		public int[] toBytes(int currentPosition)
+			throws Exception
+		{
+			return new int[length(currentPosition)];
+		}
+	}
+
 	private class AssembleData implements AssembleStructure{
 
 		private int[][] data;
 		private boolean pack = false;
 
-		public AssembleData(List<String> line, boolean pack)
+		public AssembleData(List<String> line)
 			throws Exception
 		{
-			this.pack = pack;
-			line.remove(0);
+			this.pack = line.remove(0).equals(".DP");
 			data = new int[line.size()][];
 			int i = 0;
 			for (String word : line){
@@ -1117,7 +1139,7 @@ class Assembler{
 			}
 		}
 
-		public int length()
+		public int length(int currentPosition)
 			throws Exception
 		{
 			int length = 0;
@@ -1131,19 +1153,13 @@ class Assembler{
 		public String toHexParts()
 			throws Exception
 		{
-			return Hexer.hexArray(toBytes());
+			return Hexer.hexArray(toBytes(0));
 		}
 
-		public int[] toBytes(int position)
+		public int[] toBytes(int currentPosition)
 			throws Exception
 		{
-			return toBytes();
-		}
-
-		public int[] toBytes()
-			throws Exception
-		{
-			int[] bytes = new int[pack ? length() * 2 : length()];
+			int[] bytes = new int[pack ? length(0) * 2 : length(0)];
 			int position = 0;
 			for (int i = 0; i < data.length; i++){
 				System.arraycopy(data[i], 0, bytes, position, data[i].length);
@@ -1202,7 +1218,7 @@ class Assembler{
 				b = new AssembleInstructionData(line[2]);
 		}
 
-		public int length()
+		public int length(int currentPosition)
 			throws Exception
 		{
 			int length = 1;
@@ -1230,16 +1246,10 @@ class Assembler{
 			return hex;
 		}
 
-		public int[] toBytes(int position)
+		public int[] toBytes(int currentPosition)
 			throws Exception
 		{
-			return toBytes();
-		}
-
-		public int[] toBytes()
-			throws Exception
-		{
-			int[] bytes = new int[length()];
+			int[] bytes = new int[length(0)];
 			int instruction = instructionByte();
 			if (instruction == 0x0){
 				instruction |= nonbasicInstructionByte() << 4;
