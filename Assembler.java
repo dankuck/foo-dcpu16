@@ -131,6 +131,7 @@ class Assembler{
 		FileReader reader = new FileReader(file);
 		char[] stringChars = new char[(int)file.length()];
 		reader.read(stringChars, 0, stringChars.length);
+		reader.close();
 		return new String(stringChars);
 	}
 
@@ -141,6 +142,7 @@ class Assembler{
 		FileReader reader = new FileReader(file);
 		char[] stringChars = new char[(int)file.length()];
 		reader.read(stringChars, 0, stringChars.length);
+		reader.close();
 		return new String(stringChars);
 	}
 
@@ -530,10 +532,10 @@ class Assembler{
 				File file = new File(getPath(line.get(1)));
 				FileInputStream reader = new FileInputStream(file);
 				int length = (int)file.length();
-				if (length % 2 == 1)
-					length++; // without this we'd leave out the last byte
+				length += length % 2; // without this we'd leave out the last byte
 				byte[] octets = new byte[length];
 				reader.read(octets);
+				reader.close();
 				line.add("DAT");
 				for (int i = 0; i < octets.length / 2; i++){
 					int word = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
