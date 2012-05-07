@@ -168,7 +168,6 @@ class Assembler{
 		if (program != null)
 			return program;
 		lexize();
-		structurize();
 		alignBytes();
 		showLabelAlignment();
 		showStructure();
@@ -258,15 +257,27 @@ class Assembler{
 		throws Exception
 	{
 		MathExpression exp = MathExpression.parse(string);
+		simplifyExpression(exp, true);
+		return exp;
+	}
+
+	public void simplifyExpression(MathExpression exp, String globalLabel){
+		currentGlobalLabel = globalLabel;
+		simplifyExpression(exp, false);
+	}
+
+	public void simplifyExpression(MathExpression exp, final boolean checkDefinitions){
 		exp.simplify(new MathExpression.LabelInterpretter(){
 			public Integer interpret(String label){
 				if (registers.contains(label.toUpperCase()))
 					return null;
 				if (label.matches("'\\.'"))
 					return (int)label.charAt(1);
-				Integer defined = definitions.get(label.toUpperCase());
-				if (defined != null)
-					return defined;
+				if (checkDefinitions){
+					Integer defined = definitions.get(label.toUpperCase());
+					if (defined != null)
+						return defined;
+				}
 				if (! labelsAligned)
 					return null;
 				try{
@@ -286,7 +297,6 @@ class Assembler{
 					return null;
 			}
 		});
-		return exp;
 	}
 
 	private void alignBytes()
@@ -298,25 +308,6 @@ class Assembler{
 			alignment += structures.get(i).length(alignment);
 		}
 		labelsAligned = true;
-	}
-
-	private void structurize()
-		throws Exception
-	{
-		for (int i = 0; i < lines.size(); i++){
-			String[] t = new String[lines.get(i).size()];
-			lines.get(i).toArray(t);
-			String instruction = lines.get(i).get(0);
-			if (instruction.equalsIgnoreCase(".ALIGN"))
-				structures.put(i, new AssembleAlign(lines.get(i)));
-			else if (instruction.equalsIgnoreCase("DAT") || instruction.equalsIgnoreCase(".DW") || instruction.equalsIgnoreCase(".DP") || instruction.equalsIgnoreCase(".ASCII"))
-				structures.put(i, new AssembleData(lines.get(i)));
-			else if (instruction.equalsIgnoreCase(".FILL"))
-				structures.put(i, new AssembleFill(lines.get(i)));
-			else{
-				structures.put(i, new AssembleInstruction(lines.get(i)));
-			}
-		}
 	}
 
 	private void addLabel(String label, int line, int labelOffset)
@@ -332,7 +323,7 @@ class Assembler{
 		if (labelsToLines.get(label.toUpperCase()) != null)
 			throw new Exception("Cannot redefine " + label);
 		if (! isLocal)
-			currentGlobalLabel = label.toUpperCase();
+			currentGlobalLabel = label.toUpperCase() + "::";
 		labelsToLines.put(label.toUpperCase(), line);
 		labelOffsets.put(label.toUpperCase(), labelOffset);
 	}
@@ -412,6 +403,22 @@ class Assembler{
 		}
 	}
 
+	private void addInstruction(TextLine line)
+		throws Exception
+	{
+		int i = lines.size();
+		lines.add(line);
+		String instruction = line.get(0);
+		if (instruction.equalsIgnoreCase(".ALIGN"))
+			structures.put(i, new AssembleAlign(line));
+		else if (instruction.equalsIgnoreCase("DAT") || instruction.equalsIgnoreCase(".DW") || instruction.equalsIgnoreCase(".DP") || instruction.equalsIgnoreCase(".ASCII"))
+			structures.put(i, new AssembleData(line));
+		else if (instruction.equalsIgnoreCase(".FILL"))
+			structures.put(i, new AssembleFill(line));
+		else
+			structures.put(i, new AssembleInstruction(line));
+	}
+
 	private class Lexer{
 
 		StringTokenizer tokens;
@@ -482,7 +489,7 @@ class Assembler{
 					throw new Exception("Somehow ended up with a 0 length line");
 				if (! line.get(0).equalsIgnoreCase("DAT") && line.size() > 3)
 					throw new Exception("Too many tokens on line " + lines.size() + ": " + line);
-				lines.add(line);
+				addInstruction(line);
 			}
 			if (flowstack.size() < startSize)
 				throw new Exception("There are too many ends");
@@ -532,7 +539,7 @@ class Assembler{
 					int word = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
 					line.add("0x" + Hexer.hex(word));
 				}
-				lines.add(line);
+				addInstruction(line);
 				return;
 			}
 			else if (preprocessor.equals("def") || preprocessor.equals("define") || preprocessor.equals("equ")){
@@ -701,7 +708,7 @@ class Assembler{
 					|| preprocessor.equals("align")
 			){
 				line.set(0, "." + preprocessor.toUpperCase()); // normalize, but otherwise let the structurizer deal with it.
-				lines.add(line);
+				addInstruction(line);
 				return;
 			}
 			else
@@ -910,30 +917,41 @@ class Assembler{
 
 	private class AssembleFill implements AssembleStructure{
 
-		private int length;
-		private int value = 0;
+		private MathExpression lengthExp;
+		private MathExpression valueExp;
+		private TextLine line;
 
 		public AssembleFill(TextLine line)
 			throws Exception
 		{
+			this.line = line;
 			if (line.size() == 1 || line.size() > 3)
 				throw new Exception("Wrong token count: " + line);
-			MathExpression lengthExp = buildExpression(line.get(1));
-			if (lengthExp.numericValue() == null)
-				throw new Exception("First argument not understood: " + line.get(1) + " => " + lengthExp);
-			length = lengthExp.numericValue();
-			if (line.size() == 3){
-				MathExpression valueExp = buildExpression(line.get(2));
-				if (valueExp.numericValue() == null)
-					throw new Exception("First argument not understood: " + line.get(2) + " => " + valueExp);
-				value = valueExp.numericValue() & 0xFFFF;
-			}
+			lengthExp = buildExpression(line.get(1), line.globalLabel);
+			if (line.size() == 3)
+				valueExp = buildExpression(line.get(2), line.globalLabel);
 		}
 
 		public int length(int currentPosition)
 			throws Exception
 		{
-			return length;
+			if (lengthExp.numericValue() == null)
+				simplifyExpression(lengthExp, line.globalLabel);
+			if (lengthExp.numericValue() == null)
+				throw new Exception("First argument not understood: " + line.get(1) + " => " + lengthExp);
+			return lengthExp.numericValue();
+		}
+
+		private int value()
+			throws Exception
+		{
+			if (valueExp == null)
+				return 0;
+			if (valueExp.numericValue() == null)
+				simplifyExpression(valueExp, line.globalLabel);
+			if (valueExp.numericValue() == null)
+				throw new Exception("First argument not understood: " + line.get(2) + " => " + valueExp);
+			return valueExp.numericValue() & 0xFFFF;
 		}
 
 		public String toHexParts()
@@ -945,7 +963,8 @@ class Assembler{
 		public int[] toBytes(int currentPosition)
 			throws Exception
 		{
-			int[] bytes = new int[length];
+			int[] bytes = new int[length(currentPosition)];
+			int value = value();
 			if (value != 0)
 				for (int i = 0; i < bytes.length; i++)
 					bytes[i] = value;
@@ -956,21 +975,32 @@ class Assembler{
 
 	private class AssembleAlign implements AssembleStructure{
 
-		private int boundary;
+		private MathExpression boundaryExp;
+		private TextLine line;
 
 		public AssembleAlign(TextLine line)
 			throws Exception
 		{
+			this.line = line;
 			if (line.size() != 2)
 				throw new Exception("Not enough tokens " + line);
-			MathExpression exp = buildExpression(line.get(1));
-			if (exp.numericValue() == null)
-				throw new Exception("Couldn't literalize " + line.get(1) + " => " + exp);
-			boundary = exp.numericValue();
+			boundaryExp = buildExpression(line.get(1), line.globalLabel);
 		}
 
-		public int length(int position){
-			return boundary - (position % boundary);
+		private int boundary()
+			throws Exception
+		{
+			if (boundaryExp.numericValue() == null)
+				simplifyExpression(boundaryExp, line.globalLabel);
+			if (boundaryExp.numericValue() == null)
+				throw new Exception("Couldn't literalize " + line.get(1) + " => " + boundaryExp);
+			return boundaryExp.numericValue();
+		}
+
+		public int length(int position)
+			throws Exception
+		{
+			return boundary() - (position % boundary());
 		}
 
 		public String toHexParts()
@@ -990,27 +1020,22 @@ class Assembler{
 
 		private int[][] data;
 		private boolean pack = false;
+		private List<MathExpression> literals = new ArrayList<MathExpression>();
+		private TextLine line;
 
 		public AssembleData(TextLine line)
 			throws Exception
 		{
 			this.pack = line.remove(0).equals(".DP");
+			this.line = line;
 			data = new int[line.size()][];
-			int i = 0;
-			for (String word : line){
-				if (word.indexOf('"') > -1){
-					data[i++] = getString(word);
-				}
-				else if (isNumericExpression(word)){
-					int[] number = new int[1];
-					MathExpression exp = buildExpression(word);
-					if (exp.numericValue() == null)
-						throw new Exception("Expression does not simplify to literal: " + word + " => " + exp);
-					number[0] = exp.numericValue() & 0xFFFF;
-					data[i++] = number;
-				}
+			for (int i = 0; i < line.size(); i++){
+				String word = line.get(i);
+				literals.add(null);
+				if (word.indexOf('"') > -1)
+					data[i] = getString(word);
 				else
-					throw new Exception("Data not understood: " + word);
+					literals.set(i, buildExpression(word, line.globalLabel));
 			}
 		}
 
@@ -1154,9 +1179,26 @@ class Assembler{
 			}
 		}
 
+		private void literalize()
+			throws Exception
+		{
+			for (int i = 0; i < data.length; i++){
+				if (data[i] == null){
+					MathExpression exp = literals.get(i);
+					simplifyExpression(exp, line.globalLabel);
+					if (exp.numericValue() == null)
+						throw new Exception("Expression does not simplify to literal: " + line.get(i) + " => " + exp);
+					int[] number = new int[1];
+					number[0] = exp.numericValue() & 0xFFFF;
+					data[i] = number;
+				}
+			}
+		}
+
 		public int length(int currentPosition)
 			throws Exception
 		{
+			literalize();
 			int length = 0;
 			for (int i = 0; i < data.length; i++)
 				length += data[i].length;
@@ -1168,12 +1210,14 @@ class Assembler{
 		public String toHexParts()
 			throws Exception
 		{
+			literalize();
 			return Hexer.hexArray(toBytes(0));
 		}
 
 		public int[] toBytes(int currentPosition)
 			throws Exception
 		{
+			literalize();
 			int[] bytes = new int[pack ? length(0) * 2 : length(0)];
 			int position = 0;
 			for (int i = 0; i < data.length; i++){
@@ -1224,7 +1268,9 @@ class Assembler{
 			}
 		}
 
-		public AssembleInstruction(TextLine line){
+		public AssembleInstruction(TextLine line)
+			throws Exception
+		{
 			init();
 			instruction = line.get(0);
 			if (line.size() > 1)
@@ -1313,14 +1359,25 @@ class Assembler{
 			private String data;
 			private Integer toByte;
 			private String globalLabel;
+			private MathExpression exp;
 
-			public AssembleInstructionData(String data, String globalLabel){
+			public AssembleInstructionData(String data, String globalLabel)
+				throws Exception
+			{
 				this.data = data.trim();
+				exp = buildExpression(this.data, globalLabel);
+				System.out.println(this.data + " => " + exp);
 				this.globalLabel = globalLabel;
 			}
 
 			public String toString(){
 				return data;
+			}
+
+			public void literalize()
+				throws Exception
+			{
+				simplifyExpression(exp, globalLabel);
 			}
 
 			public int toByte()
@@ -1331,7 +1388,7 @@ class Assembler{
 				Integer easy = staticTransforms.get(data.toUpperCase());
 				if (easy != null)
 					return toByte = easy;
-				MathExpression exp = buildExpression(data, globalLabel);
+				literalize();
 				String register = findRegister(exp);
 				if (exp.isParenthesized() && data.charAt(0) == '['){
 					if (register != null){
@@ -1381,7 +1438,7 @@ class Assembler{
 				if (! hasExtraByte())
 					throw new Exception("extraByte() requested but none is appropriate");
 				if (toByte >= 0x10 && toByte <= 0x17){
-					MathExpression exp = buildExpression(data, globalLabel);
+					literalize();
 					List<String> registers = exp.labels();
 					if (registers.size() != 1)
 						throw new Exception(registers.size() + " registers in expression: " + data + " => " + exp);
@@ -1404,7 +1461,7 @@ class Assembler{
 					throw new Exception("Expression doesn't simplify to [literal+register] format: " + data + " => " + exp);
 				}
 				else if (toByte == 0x1E || toByte == 0x1F){
-					MathExpression exp = buildExpression(data, globalLabel);
+					literalize();
 					if (exp.numericValue() == null)
 						throw new Exception("Expression doesn't simplify to literal: " + data + " => " + exp);
 					return exp.numericValue();
