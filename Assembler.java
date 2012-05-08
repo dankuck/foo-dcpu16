@@ -189,27 +189,35 @@ class Assembler{
 	private void programize()
 		throws Exception
 	{
-		boolean finalize = false;
-		// the first pass makes sure that all lines have an alignment
+		/*
+		The finalize parameter (the second parameter passed to AssemblerStructure.programize)
+		says two things when true:
+		(1) that all labels should have some alignment by now
+		(2) that the instruction is allowed to make adjustments to size, but it should try not to
+
+		This means that most instructions that can make adjustments will make one last size adjustment
+		on the second pass, and no size adjustments on the third pass (but maybe still value adjustments),
+		and no adjustments at all on the fourth pass.
+		 */
 		for (int i = 0; i < lines.size(); i++){
-			System.out.println("Adding line " + i);
-			structures.get(i).programize(i, finalize);
+			//System.out.println("Adding line " + i);
+			structures.get(i).programize(i, false);
 		}
-		// the second pass allows instructions to shift a bit
-		for (int i = 0; i < lines.size(); i++){
-			System.out.println("Adding line " + i);
-			structures.get(i).programize(i, finalize);
+		boolean ready = false;
+		for (int k = 0; k < 8 && ! ready; k++){ // eight passes is really ridiculously high, so we'll stop there and give an error.
+			ready = true;
+			for (int i = 0; i < lines.size(); i++){
+				//System.out.println("Checking line " + i);
+				if (structures.get(i).programize(i, true))
+					ready = false;
+			}
 		}
-		// the final pass expects instructions to deal with previous instructions shifting
-		finalize = true;
-		for (int i = 0; i < lines.size(); i++){
-			System.out.println("Reviewing line " + i);
-			structures.get(i).programize(i, finalize);
-		}
+		if (! ready)
+			throw new Exception("The code won't stay put. Maybe it would behave if you check for instructions that change size based on a label later in the program.");
 		program = new int[length()];
 		int position = 0;
 		for (int i = 0; i < lines.size(); i++){
-			System.out.println("Programizing line " + i + " position: " + position);
+			//System.out.println("Programizing line " + i + " position: " + position);
 			System.arraycopy(programBytes.get(i), 0, program, position, programBytes.get(i).length);
 			position += programBytes.get(i).length;
 		}
@@ -304,13 +312,13 @@ class Assembler{
 					if (defined != null)
 						return defined;
 				}
-				System.out.println("Searching for label " + label);
+				//System.out.println("Searching for label " + label);
 				if (! requireLabels && ! labelByteIsDefined(label)){
-					System.out.println("Won't find it.");
+					//System.out.println("Won't find it.");
 					return null;
 				}
 				try{
-					System.out.println("Found : " + labelToByte(label));
+					//System.out.println("Found : " + labelToByte(label));
 					return labelToByte(label);
 				}
 				catch(RuntimeException e){
@@ -490,7 +498,7 @@ class Assembler{
 					break;
 				else
 					line = nextLine();
-				System.out.println("- " + line);
+				//System.out.println("- " + line);
 				for (int i = flowstack.size() - 1; i >= 0; i--){
 					FlowFrame r = flowstack.get(i);
 					if (r.runningFromAddedLines)
@@ -940,7 +948,7 @@ class Assembler{
 		public String toHexParts(boolean finalize)
 			throws Exception;
 
-		public void programize(int linePosition, boolean finalize)
+		public boolean programize(int linePosition, boolean finalize)
 			throws Exception;
 
 	}
@@ -949,7 +957,10 @@ class Assembler{
 
 		private MathExpression lengthExp;
 		private MathExpression valueExp;
+		private MathExpression originalLengthExp;
+		private MathExpression originalValueExp;
 		private TextLine line;
+		private boolean lockItDown = false;
 
 		public AssembleFill(TextLine line)
 			throws Exception
@@ -960,11 +971,14 @@ class Assembler{
 			lengthExp = buildExpression(line.get(1), line.globalLabel, true, false);
 			if (line.size() == 3)
 				valueExp = buildExpression(line.get(2), line.globalLabel, true, false);
+			originalLengthExp = lengthExp;
+			originalValueExp = valueExp;
 		}
 
 		public int length(int currentPosition, boolean finalize)
 			throws Exception
 		{
+			lengthExp = originalLengthExp.clone();
 			if (lengthExp.numericValue() == null)
 				simplifyExpression(lengthExp, line.globalLabel, false, finalize);
 			if (lengthExp.numericValue() == null){
@@ -980,6 +994,7 @@ class Assembler{
 		{
 			if (valueExp == null)
 				return 0;
+			valueExp = originalValueExp.clone();
 			if (valueExp.numericValue() == null)
 				simplifyExpression(valueExp, line.globalLabel, false, finalize);
 			if (valueExp.numericValue() == null){
@@ -993,30 +1008,41 @@ class Assembler{
 		public String toHexParts(boolean finalize)
 			throws Exception
 		{
-			return Hexer.hexArray(toBytes(0, finalize));
+			return Hexer.hexArray(toBytes(0, false, null));
 		}
 
-		public int[] toBytes(int currentPosition, boolean finalize)
+		public int[] toBytes(int currentPosition, boolean finalize, int[] old)
 			throws Exception
 		{
-			int[] bytes = new int[length(currentPosition, finalize)];
+			if (lockItDown && old != null)
+				return old;
+			int length = length(currentPosition, finalize);
+			if (finalize && old.length < length)
+				length += length - old.length;
+			int[] bytes = new int[length];
 			int value = value(finalize);
 			if (value != 0)
 				for (int i = 0; i < bytes.length; i++)
 					bytes[i] = value;
+			if (finalize)
+				lockItDown = true;
 			return bytes;
 		}
 
-		public void programize(int linePosition, boolean finalize)
+		public boolean programize(int linePosition, boolean finalize)
 			throws Exception
 		{
-			programBytes.put(linePosition, toBytes(lineToPosition(linePosition), finalize));
+			int[] old = programBytes.get(linePosition);
+			int[] bytes = toBytes(lineToPosition(linePosition), finalize, old);
+			programBytes.put(linePosition, bytes);
+			return ! Arrays.equals(old, bytes);
 		}
 	}
 
 	private class AssembleAlign implements AssembleStructure{
 
 		private MathExpression boundaryExp;
+		private MathExpression original;
 		private TextLine line;
 
 		public AssembleAlign(TextLine line)
@@ -1026,11 +1052,13 @@ class Assembler{
 			if (line.size() != 2)
 				throw new Exception("Not enough tokens " + line);
 			boundaryExp = buildExpression(line.get(1), line.globalLabel, true, false);
+			original = boundaryExp;
 		}
 
 		private int boundary(boolean finalize)
 			throws Exception
 		{
+			boundaryExp = original.clone();
 			if (boundaryExp.numericValue() == null)
 				simplifyExpression(boundaryExp, line.globalLabel, false, finalize);
 			if (boundaryExp.numericValue() == null){
@@ -1053,16 +1081,22 @@ class Assembler{
 			return "";
 		}
 
-		public int[] toBytes(int currentPosition, boolean finalize)
+		public int[] toBytes(int currentPosition, boolean finalize, int[] old)
 			throws Exception
 		{
-			return new int[length(currentPosition, finalize)];
+			int length = length(currentPosition, finalize);
+			if (finalize && old.length > length)
+				length += boundary(finalize);
+			return new int[length];
 		}
 
-		public void programize(int linePosition, boolean finalize)
+		public boolean programize(int linePosition, boolean finalize)
 			throws Exception
 		{
-			programBytes.put(linePosition, toBytes(lineToPosition(linePosition), finalize));
+			int[] old = programBytes.get(linePosition);
+			int[] bytes = toBytes(lineToPosition(linePosition), finalize, old);
+			programBytes.put(linePosition, bytes);
+			return ! Arrays.equals(old, bytes);
 		}
 	}
 
@@ -1071,6 +1105,7 @@ class Assembler{
 		private int[][] data;
 		private boolean pack = false;
 		private List<MathExpression> literals = new ArrayList<MathExpression>();
+		private List<MathExpression> originals;
 		private TextLine line;
 
 		public AssembleData(TextLine line)
@@ -1087,6 +1122,7 @@ class Assembler{
 				else
 					literals.set(i, buildExpression(word, line.globalLabel, true, false));
 			}
+			originals = literals;
 		}
 
 		private int[] getString(String code)
@@ -1233,18 +1269,21 @@ class Assembler{
 			throws Exception
 		{
 			for (int i = 0; i < data.length; i++){
-				if (data[i] == null){
-					MathExpression exp = literals.get(i);
-					simplifyExpression(exp, line.globalLabel, false, finalize);
-					if (exp.numericValue() == null){
-						if (! finalize)
-							continue;
-						throw new Exception("Expression does not simplify to literal: " + line.get(i) + " => " + exp);
+				MathExpression exp = originals.get(i);
+				if (exp == null)
+					continue;
+				exp = exp.clone();
+				simplifyExpression(exp, line.globalLabel, false, finalize);
+				if (exp.numericValue() == null){
+					if (! finalize){
+						data[i] = null;
+						continue;
 					}
-					int[] number = new int[1];
-					number[0] = exp.numericValue() & 0xFFFF;
-					data[i] = number;
+					throw new Exception("Expression does not simplify to literal: " + line.get(i) + " => " + exp);
 				}
+				int[] number = new int[1];
+				number[0] = exp.numericValue() & 0xFFFF;
+				data[i] = number;
 			}
 		}
 
@@ -1288,10 +1327,13 @@ class Assembler{
 			return packed;
 		}
 
-		public void programize(int linePosition, boolean finalize)
+		public boolean programize(int linePosition, boolean finalize)
 			throws Exception
 		{
-			programBytes.put(linePosition, toBytes(lineToPosition(linePosition), finalize));
+			int[] old = programBytes.get(linePosition);
+			int[] bytes = toBytes(lineToPosition(linePosition), finalize);
+			programBytes.put(linePosition, bytes);
+			return ! Arrays.equals(old, bytes);
 		}
 
 	}
@@ -1368,7 +1410,7 @@ class Assembler{
 		public int[] toBytes(int currentPosition, boolean finalize)
 			throws Exception
 		{
-			int[] bytes = new int[length(0, finalize)];
+			int[] bytes = new int[length(currentPosition, finalize)];
 			int instruction = instructionByte();
 			if (instruction == 0x0){
 				instruction |= nonbasicInstructionByte() << 4;
@@ -1415,10 +1457,10 @@ class Assembler{
 		public class AssembleInstructionData{
 
 			private String data;
-			private Integer toByte;
 			private String globalLabel;
 			private MathExpression exp;
 			private MathExpression original;
+			private boolean forceExtraByte = false;
 
 			public AssembleInstructionData(String data, String globalLabel)
 				throws Exception
@@ -1426,7 +1468,7 @@ class Assembler{
 				this.data = data.trim();
 				exp = buildExpression(this.data, globalLabel, true, false);
 				original = exp;
-				System.out.println(this.data + " => " + exp);
+				//System.out.println(this.data + " => " + exp);
 				this.globalLabel = globalLabel;
 			}
 
@@ -1437,19 +1479,17 @@ class Assembler{
 			public void literalize(boolean finalize)
 				throws Exception
 			{
-				System.out.println("finalize " + (finalize ? "yes" : "no"));
-				exp = original.clone(); // re-calculate from the original every time to allow for moving labelsz
+				//System.out.println("finalize " + (finalize ? "yes" : "no"));
+				exp = original.clone(); // re-calculate from the original every time to allow for moving labels
 				simplifyExpression(exp, globalLabel, false, finalize);
 			}
 
 			public int toByte(boolean finalize)
 				throws Exception
 			{
-				//if (toByte != null)
-				//	return toByte;
 				Integer easy = staticTransforms.get(data.toUpperCase());
 				if (easy != null)
-					return toByte = easy;
+					return easy;
 				literalize(finalize);
 				String register = findRegister(exp);
 				if (exp.isParenthesized() && data.charAt(0) == '['){
@@ -1457,22 +1497,24 @@ class Assembler{
 						Integer code = plusRegisters.get(register.toUpperCase());
 						if (code == null)
 							throw new Exception("Cannot use " + register + " in [register+literal] in: " + data + " => " + exp);
-						return toByte = code;
+						return code;
 					}
-					return toByte = 0x1E;
+					return 0x1E;
 				}
 				else{
 					if (register != null){
 						if (exp.value() != null && exp.value().equalsIgnoreCase(register))
-							return toByte = staticTransforms.get(register.toUpperCase());
+							return staticTransforms.get(register.toUpperCase());
 						else
 							throw new Exception("Cannot use a register this way: " + data + " => " + exp);
 					}
-					//* the program jumps around a bit making this occassionally produce errors. just use extraByte literals for now
+					if (forceExtraByte)
+						return 0x1F;
 					if (exp.numericValue() != null && (exp.numericValue() & 0xFFFF) < 0x1F)
-						return toByte = exp.numericValue() + 0x20;
-					//*/
-					return toByte = 0x1F;
+						return exp.numericValue() + 0x20;
+					if (finalize)
+						forceExtraByte = true; // finalize means "stop changing size", so don't let this change size next time.
+					return 0x1F;
 				}
 			}
 
@@ -1553,10 +1595,13 @@ class Assembler{
 		}
 
 
-		public void programize(int linePosition, boolean finalize)
+		public boolean programize(int linePosition, boolean finalize)
 			throws Exception
 		{
-			programBytes.put(linePosition, toBytes(lineToPosition(linePosition), finalize));
+			int[] old = programBytes.get(linePosition);
+			int[] bytes = toBytes(lineToPosition(linePosition), finalize);
+			programBytes.put(linePosition, bytes);
+			return ! Arrays.equals(old, bytes);
 		}
 	}
 
