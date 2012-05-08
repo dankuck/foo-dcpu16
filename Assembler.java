@@ -41,13 +41,11 @@ class Assembler{
 	}
 
 	private String filename;
-	private List<TextLine> lines;
+	private List<TextLine> lines = new ArrayList<TextLine>();
 	private String currentGlobalLabel = "";
 	private HashMap<String, Integer> labelsToLines = new HashMap<String, Integer>();
 	private HashMap<String, Integer> labelOffsets = new HashMap<String, Integer>();
 	private HashMap<Integer, AssembleStructure> structures = new HashMap<Integer, AssembleStructure>();
-	private HashMap<Integer, Integer> linesToBytes = new HashMap<Integer, Integer>();
-	private boolean labelsAligned = false;
 	private int[] program;
 	private HashMap<String, Integer> staticTransforms;
 	private HashMap<String, Integer> plusRegisters;
@@ -171,9 +169,6 @@ class Assembler{
 		if (program != null)
 			return program;
 		lexize();
-		//alignBytes();
-		//showStructure(false);
-		//showLabelAlignment();
 		programize();
 		System.out.println("Program:");
 		System.out.println(Hexer.hexArray(program));
@@ -337,17 +332,6 @@ class Assembler{
 		});
 	}
 
-	private void alignBytes()
-		throws Exception
-	{
-		int alignment = 0;
-		for (int i = 0; i < structures.size(); i++){
-			linesToBytes.put(i, alignment);
-			alignment += structures.get(i).length(alignment, false);
-		}
-		labelsAligned = true;
-	}
-
 	private void addLabel(String label, int line, int labelOffset)
 		throws Exception
 	{
@@ -385,7 +369,6 @@ class Assembler{
 	private void lexize()
 		throws Exception
 	{
-		lines = new ArrayList<TextLine>();
 		lexize(contents());
 	}
 
@@ -1343,6 +1326,7 @@ class Assembler{
 		public String instruction;
 		public AssembleInstructionData a;
 		public AssembleInstructionData b;
+		public TextLine line;
 
 		private HashMap<String, Integer> instructionBytes;
 
@@ -1372,6 +1356,7 @@ class Assembler{
 			throws Exception
 		{
 			init();
+			this.line = line;
 			instruction = line.get(0);
 			if (line.size() > 1)
 				a = new AssembleInstructionData(line.get(1), line.globalLabel);
@@ -1424,6 +1409,17 @@ class Assembler{
 				if (b != null)
 					instruction |= b.toByte(finalize) << 10;
 			}
+			if ((instruction & 0x3FF) == 0x1C1 && bytes.length == 2){ // SET PC, [next_word]
+				TextLine ADDLine = new TextLine(line);
+				ADDLine.set(0, "ADD");
+				ADDLine.set(2, ADDLine.get(2) + "-" + (currentPosition + 1));
+				AssembleInstruction ADDIns = new AssembleInstruction(ADDLine);
+				int[] ADDBytes = ADDIns.toBytes(currentPosition, finalize);
+				if (ADDBytes.length == 1){
+					System.out.println("Optimization: Using " + ADDIns + " in place of " + this + " : " + ADDIns.toHexParts(finalize));
+					return ADDBytes;
+				}
+			}
 			bytes[0] = instruction;
 			if (a != null && a.hasExtraByte(finalize))
 				bytes[1] = a.extraByte(finalize);
@@ -1450,7 +1446,7 @@ class Assembler{
 			if (a != null)
 				str += " " + a;
 			if (b != null)
-				str += " " + b;
+				str += ", " + b;
 			return str;
 		}
 
