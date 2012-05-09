@@ -447,12 +447,12 @@ class Assembler{
 		StringTokenizer tokens;
 		List<FlowFrame> flowstack = new ArrayList<FlowFrame>();
 		List<FlowFrame> lineSources = new ArrayList<FlowFrame>();
-		TextLine nextLine;
+		List<TextLine> nextLines = new ArrayList<TextLine>();
 		int org = 0;
 
 		public Lexer(String contents){
 			contents += "\n"; // \n helps us make sure we get the last token
-			tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\", true);
+			tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\{}", true);
 		}
 
 		private FlowFrame flowtop(){
@@ -490,8 +490,8 @@ class Assembler{
 						break;
 					r.sub(line);
 				}
-				boolean isPreprocessor = line.get(0).matches("#.*|\\..*");
-				String preprocessor = line.get(0).replaceAll("^#|^\\.", "").toLowerCase();
+				boolean isPreprocessor = isPreprocessor(line.get(0));
+				String preprocessor = cleanPreprocessor(line.get(0));
 				boolean skippingLines = ! flowtop.active;
 				boolean isFlowRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef") || preprocessor.equals("rep") || preprocessor.equals("macro") || preprocessor.equals("end"));
 				if (skippingLines && ! isFlowRelated)
@@ -742,22 +742,33 @@ class Assembler{
 			throws Exception
 		{
 			queueLine();
-			return nextLine != null;
+			return nextLines.size() != 0;
 		}
 
 		private TextLine nextLine()
 			throws Exception
 		{
 			queueLine();
-			TextLine line = nextLine;
-			nextLine = null;
+			if (nextLines.size() == 0)
+				return null;
+			TextLine line = nextLines.remove(0);
+			if (line.get(0).equals("}")){
+				queueLine();
+				TextLine nextLine = nextLines.size() == 0 ? null : nextLines.get(0);
+				if (nextLine != null && isPreprocessor(nextLine.get(0))){
+					String pp = cleanPreprocessor(nextLine.get(0));
+					if (pp.equals("elif") || pp.equals("elsif") || pp.equals("else"))
+						return nextLine(); // in these cases the } is just syntactic sugar, in all other cases it should be interpretted as a .end
+				}
+				line.set(0, ".end");
+			}
 			return line;
 		}
 
 		private void queueLine()
 			throws Exception
 		{
-			if (nextLine != null)
+			if (nextLines.size() != 0)
 				return;
 			boolean inComment = false;
 			TextLine line = new TextLine();
@@ -766,16 +777,26 @@ class Assembler{
 			boolean inQuotes = false;
 			while (tokens.hasMoreTokens()){
 				String token = tokens.nextToken();
-				if (token.equals("\n")){
+				if (token.charAt(0) == '{' && ! inComment){
+					token = "\n";
+				}
+				boolean isEndCurly = token.charAt(0) == '}' && ! inComment;
+				if (token.equals("\n") || isEndCurly){
 					inComment = false;
 					if (expression.trim().length() > 0){
 						line.add(expression.trim());
 						expression = "";
 					}
-					if (line.size() == 0)
-						continue;
-					nextLine = line;
-					return;
+					if (line.size() > 0)
+						nextLines.add(line);
+					if (isEndCurly){
+						TextLine curly = new TextLine();
+						curly.add("}");
+						nextLines.add(curly);
+					}
+					if (nextLines.size() > 0)
+						return;
+					continue;
 				}
 				if (inComment)
 					continue;
@@ -816,7 +837,14 @@ class Assembler{
 				expression += token;
 			}
 		}
+	}
 
+	public boolean isPreprocessor(String word){
+		return word.matches("#.*|\\..*");
+	}
+
+	public String cleanPreprocessor(String word){
+		return word.replaceAll("^#|^\\.", "").toLowerCase();
 	}
 
 	public List<String> interpretMacroParts(List<String> line)
