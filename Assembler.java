@@ -4,6 +4,8 @@ import java.io.*;
 
 class Assembler{
 
+	private static boolean optimize = true;
+
 	static{
 		String[][] precedence = {
 									{ "@!", "@+", "@~", "@-" },
@@ -401,7 +403,7 @@ class Assembler{
 		public boolean isBottom(){
 			return type == BOTTOM;
 		}
-		public void addLine(List<String> line){
+		public void sub(List<String> line){
 			if (isRep() || isMacro())
 				lines.add(new TextLine(line));
 		}
@@ -424,7 +426,7 @@ class Assembler{
 		}
 	}
 
-	private void addInstruction(TextLine line)
+	private void subInstruction(TextLine line)
 		throws Exception
 	{
 		int i = lines.size();
@@ -486,7 +488,7 @@ class Assembler{
 					FlowFrame r = flowstack.get(i);
 					if (r.runningFromAddedLines)
 						break;
-					r.addLine(line);
+					r.sub(line);
 				}
 				boolean isPreprocessor = line.get(0).matches("#.*|\\..*");
 				String preprocessor = line.get(0).replaceAll("^#|^\\.", "").toLowerCase();
@@ -510,7 +512,7 @@ class Assembler{
 					throw new Exception("Somehow ended up with a 0 length line");
 				if (! line.get(0).equalsIgnoreCase("DAT") && line.size() > 3)
 					throw new Exception("Too many tokens on line " + lines.size() + ": " + line);
-				addInstruction(line);
+				subInstruction(line);
 			}
 			if (flowstack.size() < startSize)
 				throw new Exception("There are too many ends");
@@ -560,7 +562,7 @@ class Assembler{
 					int word = ((int)(octets[i * 2] & 0xFF) << 8) | (int)(octets[i * 2 + 1] & 0xFF);
 					line.add("0x" + Hexer.hex(word));
 				}
-				addInstruction(line);
+				subInstruction(line);
 				return;
 			}
 			else if (preprocessor.equals("def") || preprocessor.equals("define") || preprocessor.equals("equ")){
@@ -729,7 +731,7 @@ class Assembler{
 					|| preprocessor.equals("align")
 			){
 				line.set(0, "." + preprocessor.toUpperCase()); // normalize, but otherwise let the structurizer deal with it.
-				addInstruction(line);
+				subInstruction(line);
 				return;
 			}
 			else
@@ -916,7 +918,7 @@ class Assembler{
 					}
 					//System.out.println("Replaced: " + line.get(i));
 				}
-				frame.addLine(line);
+				frame.sub(line);
 			}
 			lines.resetLine();
 			return frame;
@@ -1327,6 +1329,7 @@ class Assembler{
 		public AssembleInstructionData a;
 		public AssembleInstructionData b;
 		public TextLine line;
+		private AssembleInstruction subbingFor;
 
 		private HashMap<String, Integer> instructionBytes;
 
@@ -1395,7 +1398,25 @@ class Assembler{
 		public int[] toBytes(int currentPosition, boolean finalize)
 			throws Exception
 		{
+			AssembleInstruction sub = substitution(currentPosition, finalize);
+			if (sub != null){
+				int[] subBytes = sub.toBytes(currentPosition, finalize);
+				if (subbingFor == null)
+					System.out.println("Optimization: Using " + sub + " in place of " + this + " : " + sub.toHexParts(finalize) + "; " + Hexer.hexArray(subBytes));
+				return subBytes;
+			}
 			int[] bytes = new int[length(currentPosition, finalize)];
+			bytes[0] = completeInstruction(finalize);
+			if (a != null && a.hasExtraByte(finalize))
+				bytes[1] = a.extraByte(finalize);
+			if (b != null && b.hasExtraByte(finalize))
+				bytes[bytes.length - 1] = b.extraByte(finalize);
+			return bytes;
+		}
+
+		private int completeInstruction(boolean finalize)
+			throws Exception
+		{
 			int instruction = instructionByte();
 			if (instruction == 0x0){
 				instruction |= nonbasicInstructionByte() << 4;
@@ -1409,23 +1430,83 @@ class Assembler{
 				if (b != null)
 					instruction |= b.toByte(finalize) << 10;
 			}
-			if ((instruction & 0x3FF) == 0x1C1 && bytes.length == 2){ // SET PC, [next_word]
-				TextLine ADDLine = new TextLine(line);
-				ADDLine.set(0, "ADD");
-				ADDLine.set(2, ADDLine.get(2) + "-" + (currentPosition + 1));
-				AssembleInstruction ADDIns = new AssembleInstruction(ADDLine);
-				int[] ADDBytes = ADDIns.toBytes(currentPosition, finalize);
-				if (ADDBytes.length == 1){
-					System.out.println("Optimization: Using " + ADDIns + " in place of " + this + " : " + ADDIns.toHexParts(finalize));
-					return ADDBytes;
-				}
+			return instruction;
+		}
+
+		private AssembleInstruction substitution(int currentPosition, boolean finalize)
+			throws Exception
+		{
+			if (! optimize)
+				return null;
+			TextLine sub = null;
+			int inst = completeInstruction(finalize);
+			if (inst == 0x7DC1){ // SET PC, [next_word]
+				sub = new TextLine(line);
+				sub.set(0, "ADD");
+				sub.set(2, "(" + sub.get(2) + ")-" + (currentPosition + 1));
 			}
-			bytes[0] = instruction;
-			if (a != null && a.hasExtraByte(finalize))
-				bytes[1] = a.extraByte(finalize);
-			if (b != null && b.hasExtraByte(finalize))
-				bytes[bytes.length - 1] = b.extraByte(finalize);
-			return bytes;
+			else if ((inst & 0xFC0F) == 0x7C02 && (subbingFor == null || ! subbingFor.instruction.equalsIgnoreCase("SUB"))){ // ADD x, [next_word]
+				sub = new TextLine(line);
+				sub.set(0, "SUB");
+				sub.set(2, "-(" + sub.get(2) + ")");
+			}
+			else if ((inst & 0xFC0F) == 0x7C03 && (subbingFor == null || ! subbingFor.instruction.equalsIgnoreCase("ADD"))){ // SUB x, [next_word]
+				sub = new TextLine(line);
+				sub.set(0, "ADD");
+				sub.set(2, "-(" + sub.get(2) + ")");
+			}
+			else if (((inst & 0x000F) == 0x0004 || (inst & 0x000F) == 0x0005) && b != null && b.isConstant(finalize)){
+				/*
+				If multiplying or dividing by a constant that is a power of 2, we can turn it into a shift instead.
+				In many cases, this is faster because shift is faster than DIV and we can avoid a [next_word] lookup
+				*/
+				int bValue = b.constantValue(finalize);
+				int shift = -1;
+				for (int i = 0; i <= 0xF; i++)
+					if (1<<i == bValue){
+						shift = i;
+						break;
+					}
+					else if (1<<i > bValue)
+						break; // passed our target
+				if (shift == -1)
+					return null;
+				sub = new TextLine(line);
+				sub.set(0, (inst & 0x000F) == 0x0004 ? "SHL" : "SHR");
+				sub.set(2, shift + "");
+			}
+			else if ((inst & 0x000F) == 0x0006 && b != null && b.isConstant(finalize)){
+				/*
+				If moduloing by a constant that is a power of 2, we can turn it into an AND instead.
+				This is faster because AND is faster than MOD. In one case, it will also remove a [next_word] lookup
+				*/
+				int bValue = b.constantValue(finalize);
+				int mod = -1;
+				for (int i = 0; i <= 0xF; i++)
+					if (1<<i == bValue){
+						mod = i;
+						break;
+					}
+					else if (1<<i > bValue)
+						break; // passed our target
+				if (mod == -1)
+					return null;
+				sub = new TextLine(line);
+				sub.set(0, "AND");
+				sub.set(2, (bValue - 1) + "");
+			}
+			else
+				return null;
+			AssembleInstruction subIns = new AssembleInstruction(sub);
+			subIns.subbingFor = this;
+			AssembleInstruction find = subIns;
+			while (find != null){
+				subIns = find;
+				find = find.substitution(currentPosition, finalize);
+			}
+			if (subIns.toBytes(currentPosition, finalize).length == 1)
+				return subIns;
+			return null;
 		}
 
 		private int nonbasicInstructionByte(){
@@ -1507,7 +1588,7 @@ class Assembler{
 					if (forceExtraByte)
 						return 0x1F;
 					if (exp.numericValue() != null && (exp.numericValue() & 0xFFFF) < 0x1F)
-						return exp.numericValue() + 0x20;
+						return (exp.numericValue() & 0xFFFF) + 0x20;
 					if (finalize)
 						forceExtraByte = true; // finalize means "stop changing size", so don't let this change size next time.
 					return 0x1F;
@@ -1534,11 +1615,11 @@ class Assembler{
 			public int extraByte(boolean finalize)
 				throws Exception
 			{
+				literalize(finalize);
 				int toByte = toByte(finalize);
 				if (! hasExtraByte(finalize))
 					throw new Exception("extraByte() requested but none is appropriate");
 				if (toByte >= 0x10 && toByte <= 0x17){
-					literalize(finalize);
 					List<String> rs = new ArrayList<String>();
 					for (String label : exp.labels())
 						if (plusRegisters.get(label) != null)
@@ -1570,16 +1651,17 @@ class Assembler{
 					throw new Exception("Expression doesn't simplify to [literal+register] format: " + data + " => " + exp);
 				}
 				else if (toByte == 0x1E || toByte == 0x1F){
-					literalize(finalize);
-					if (finalize){
-						if (exp.numericValue() == null)
+					if (exp.numericValue() == null){
+						if (finalize)
 							throw new Exception("Expression doesn't simplify to literal: " + data + " => " + exp);
-						return exp.numericValue();
+						return 0;
 					}
-					return 0;
+					return exp.numericValue();
 				}
+				else if (finalize)
+					throw new Exception("I'm broken... I don't know what to do with my own toByte==" + Hexer.hex(toByte) + " " + (hasExtraByte(finalize) ? " (I now know that I have no extra byte, " + Hexer.hex(toByte(finalize)) + ") " + this + " of " + AssembleInstruction.this : ""));
 				else
-					throw new Exception("I'm broken... I don't know what to do with my own toByte==" + Hexer.hex(toByte));
+					return 0;
 			}
 
 			public boolean hasExtraByte(boolean finalize) // When this is called, the tokens might not be aligned yet, so we cannot call extraByte(). Besides, extraByte() calls this method.
@@ -1587,6 +1669,22 @@ class Assembler{
 			{
 				int toByte = toByte(finalize);
 				return ! ((toByte >= 0x0 && toByte <= 0xF) || (toByte >= 0x18 && toByte <= 0x1D) || (toByte >= 0x20 && toByte <= 0x3F));
+			}
+
+			public boolean isConstant(boolean finalize)
+				throws Exception
+			{
+				return hasExtraByte(finalize) || (toByte(finalize) >= 0x20 && toByte(finalize) <= 0x3F);
+			}
+
+			public int constantValue(boolean finalize)
+				throws Exception
+			{
+				if (! isConstant(finalize))
+					throw new Exception("Not a constant, check isConstant first");
+				if (hasExtraByte(finalize))
+					return extraByte(finalize);
+				return toByte(finalize) - 0x20;
 			}
 		}
 
@@ -1609,8 +1707,13 @@ class Assembler{
 			super();
 		}
 
-		public TextLine(List<String> copy){ // includes TextLine(TextLine)
+		public TextLine(List<String> copy){
 			super(copy);
+		}
+
+		public TextLine(TextLine copy){
+			super(copy);
+			globalLabel = copy.globalLabel;
 		}
 
 		public void globalLabel(String globalLabel){
