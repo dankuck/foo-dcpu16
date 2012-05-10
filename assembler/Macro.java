@@ -36,7 +36,7 @@ public class Macro{
 				}
 				//System.out.println("Replaced: " + line.get(i));
 			}
-			frame.sub(line);
+			frame.addLine(line);
 		}
 		lines.resetLine();
 		return frame;

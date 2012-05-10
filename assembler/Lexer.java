@@ -53,7 +53,7 @@ public class Lexer{
 				FlowFrame r = flowstack.get(i);
 				if (r.runningFromAddedLines)
 					break;
-				r.sub(line);
+				r.addLine(line);
 			}
 			boolean isPreprocessor = isPreprocessor(line.get(0));
 			String preprocessor = cleanPreprocessor(line.get(0));
@@ -71,6 +71,10 @@ public class Lexer{
 				calledMacro.runningFromAddedLines = true;
 				flowstack.add(calledMacro);
 				lineSources.add(calledMacro);
+				continue;
+			}
+			if (line.get(0).charAt(0) == ':' || line.get(0).charAt(line.get(0).length() - 1) == ':'){
+				assembler.addLabel(line.get(0).replaceAll("^:|:$", ""), org);
 				continue;
 			}
 			if (line.size() == 0)
@@ -346,11 +350,17 @@ public class Lexer{
 				token = "\n";
 			}
 			boolean isEndCurly = token.charAt(0) == '}' && ! inComment;
-			if (token.equals("\n") || isEndCurly){
+			boolean isLabel = (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':') && ! inComment;
+			if (token.equals("\n") || isEndCurly || isLabel){
 				inComment = false;
 				if (expression.trim().length() > 0){
 					line.add(expression.trim());
 					expression = "";
+				}
+				if (isLabel){
+					if (line.size() > 0)
+						throw new Exception("Label is not at beginning of line: " + token);
+					line.add(token);
 				}
 				if (line.size() > 0)
 					nextLines.add(line);
@@ -391,13 +401,6 @@ public class Lexer{
 						escaping = false;
 					token += subtoken;
 				}
-			}
-			if (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':'){
-				if (line.size() > 0)
-					throw new Exception("Label not at beginning of line " + token + " in " + line);
-				assembler.addLabel(token.replaceAll("^:|:$", ""), org);
-				line.globalLabel(assembler.currentGlobalLabel());
-				continue;
 			}
 			expression += token;
 		}
