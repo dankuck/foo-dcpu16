@@ -1139,7 +1139,7 @@ public class Assembler{
 				if (toByte >= 0x10 && toByte <= 0x17){
 					List<String> rs = new ArrayList<String>();
 					for (String label : exp.labels())
-						if (plusRegisters.get(label) != null)
+						if (plusRegisters.get(label.toUpperCase()) != null)
 							rs.add(label);
 					if (rs.size() != 1)
 						throw new Exception(rs.size() + " registers in expression: " + data + " => " + exp);
