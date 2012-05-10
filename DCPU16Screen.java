@@ -11,6 +11,7 @@ import java.awt.event.*;
 import java.util.*;
 import java.io.*;
 
+import hexer.*;
 
 class DCPU16Screen
 	extends JFrame
@@ -187,7 +188,7 @@ class DCPU16Screen
 	private static void loadFromFile(String filename, Memory memory){
 		if (filename.matches(".*\\.asm")){
 			System.out.println("doing asm....");
-			Assembler a = new Assembler(filename);
+			assembler.Assembler a = new assembler.Assembler(filename);
 			try{
 				memory.write(0, a.assemble());
 			}

@@ -4,9 +4,12 @@
 * But if you're doing regular math problems, you don't care about that, because you'll never come across such a thing.
 */
 
-import java.util.*;
+package mathExpression;
 
-class MathExpression{
+import java.util.*;
+import hexer.*;
+
+public class MathExpression{
 
 	private final static String UNARY = "unary";
 	private static String[][] precedence =

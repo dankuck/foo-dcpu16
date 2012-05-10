@@ -1,4 +1,6 @@
 
+import hexer.*;
+
 public class Memory{
 
 	private int pageCount;

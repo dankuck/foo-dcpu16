@@ -1,4 +1,6 @@
 
+import hexer.*;
+
 public class Registers{
 
 	private int[] registers = new int[11];

@@ -4,6 +4,8 @@
 import java.util.*;
 import java.io.*;
 
+import hexer.*;
+
 public class Harness{
 
 	private ArrayList<DCPU16> dcpu16s = new ArrayList<DCPU16>();
