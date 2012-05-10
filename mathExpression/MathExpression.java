@@ -1,6 +1,7 @@
 /*
 * Turns a mathematical expression into a tree of MathExpression nodes.
-* When () and [] follow an identifier (not an operator), then we treat it as a + like in Assembler, not as a method like in C
+* When [] is followed by an identifier (not an operator), then we treat it as a +
+* When () is followed by an identifier (not an operator), then we add an operator "call" between them. simplify() treats this specially
 * But if you're doing regular math problems, you don't care about that, because you'll never come across such a thing.
 */
 
