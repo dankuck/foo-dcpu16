@@ -186,5 +186,18 @@ DAT display_start
 	SET PC, POP
 	
 	:_newline
-	.dw p"\n"	
+	.dw p"\n"
+	
+:cls
+	SET A, display_start
+	:_loop
+	IFE A, display_end
+		SET PC, _done
+	SET A, 0
+	ADD A, 1
+	SET PC, _loop
+	:_done
+	SET [cursor_position], display_start
+	SET PC, POP
+	
 .end
