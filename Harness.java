@@ -6,6 +6,7 @@ import java.io.*;
 
 import hexer.*;
 
+
 public class Harness{
 
 	private ArrayList<DCPU16> dcpu16s = new ArrayList<DCPU16>();
@@ -112,7 +113,7 @@ public class Harness{
 					d.step();
 					break;
 				case '7':
-					new Thread(new DCPU16Screen(d.memory())).start();
+					new Thread(new Console(d.memory())).start();
 					break;
 				case '8':
 					d.setDebug(true);

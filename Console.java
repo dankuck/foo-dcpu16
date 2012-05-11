@@ -13,7 +13,7 @@ import java.io.*;
 
 import hexer.*;
 
-class DCPU16Screen
+class Console
 	extends JFrame
 	implements Runnable
 {
@@ -30,13 +30,13 @@ class DCPU16Screen
 
 	private JTextArea screenTextArea;
 
-	public DCPU16Screen(Memory memory, int screenStart, int keyboardStart){
+	public Console(Memory memory, int screenStart, int keyboardStart){
 		this.m = memory;
 		this.screenStart = screenStart;
 		this.keyboardStart = keyboardStart;
 	}
 
-	public DCPU16Screen(Memory memory){
+	public Console(Memory memory){
 		this.m = memory;
 		this.screenStart = 0x8000;
 		this.keyboardStart = 0x9000;
@@ -160,7 +160,7 @@ class DCPU16Screen
 		final DCPU16 d = new DCPU16();
 		d.setSpeed(100000);
 		loadFromFile(args[0], d.memory());
-		new Thread(new DCPU16Screen(d.memory())).start();
+		new Thread(new Console(d.memory())).start();
 		final boolean[] stop = new boolean[1];
 		new Thread(new Runnable(){
 			public void run(){
