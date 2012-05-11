@@ -36,10 +36,12 @@ public class TextLine extends ArrayList<String>{
 		if (line.size() == 0)
 			return "";
 		line = new ArrayList<String>(line);
+		String str = line.remove(0) + " ";
+		if (line.size() == 0)
+			return str;
 		String last = line.remove(line.size() - 1);
-		String str = "";
 		for (String token : line)
-			str += token + " ";
+			str += token + ", ";
 		str += last;
 		return str;
 	}

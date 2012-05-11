@@ -12,7 +12,6 @@ import hexer.*;
 
 public class MathExpression{
 
-	private final static String UNARY = "unary";
 	private static String[][] precedence =
 										{
 											{ "@!", "@+", "@~", "@-" },
@@ -48,6 +47,7 @@ public class MathExpression{
 	private Integer numericValue = null;
 	private boolean isParenthesized = false;
 	private boolean isUnary = false;
+	private String parentheses = "()";
 
 	public static void setPrecedence(String[][] precedence){
 		MathExpression.precedence = precedence;
@@ -71,6 +71,7 @@ public class MathExpression{
 						continue;
 					opsEncountered = true;
 					if (s.charAt(i) == ']' || s.charAt(i) == ')'){
+						String parenType = s.charAt(i) == ']' ? "[]" : "()";
 						String paren = grabParenReverse(s.substring(0, i + 1));
 						i -= paren.length() - 1;
 						String pairedWith = "";
@@ -93,6 +94,7 @@ public class MathExpression{
 						if (isFirstOp && isLastOp){
 							MathExpression right = parse(paren, 1, -1);
 							right.isParenthesized = true;
+							right.parentheses = parenType;
 							if (pairedWith.trim().length() == 0)
 								return right;
 							MathExpression exp = new MathExpression(parse(pairedWith.trim()), paren.charAt(0) == '[' ? "+" : "call", right);
@@ -544,6 +546,7 @@ public class MathExpression{
 		exp.value = value;
 		exp.numericValue = numericValue;
 		exp.isParenthesized = isParenthesized;
+		exp.parentheses = parentheses;
 		exp.isUnary = isUnary;
 		return exp;
 	}
@@ -553,15 +556,20 @@ public class MathExpression{
 	}
 
 	public String toString(boolean addParentheses){
+		String leftParen = parentheses.substring(0, 1);
+		String rightParen = parentheses.substring(1, 2);
 		if (operator != null){
 			String str = (left == null ? "" : left + " ") + (operator.equals("call") ? "" : operator) + " " + right;
 			if (addParentheses || isParenthesized)
-				return "(" + str + ")";
+				return leftParen + str + rightParen;
 			return str;
 		}
-		if (numericValue != null)
+		if (numericValue != null){
+			if (isParenthesized)
+				return leftParen + numericValue + rightParen;
 			return numericValue + "";
-		return isParenthesized ? "(" + value + ")" : value;
+		}
+		return isParenthesized ? leftParen + value + rightParen : value;
 	}
 
 	/********************

@@ -166,6 +166,64 @@ public class Assembler{
 		return program;
 	}
 
+	public void debug(String debugfile)
+		throws Exception
+	{
+		FileWriter writer = new FileWriter(debugfile);
+		writer.write(debug());
+		writer.close();
+	}
+
+	public String debug()
+		throws Exception
+	{
+		ArrayList<String> column1 = new ArrayList<String>();
+		ArrayList<String> column2 = new ArrayList<String>();
+		ArrayList<String> column3 = new ArrayList<String>();
+		for (int i = 0; i < lines.size(); i++){
+			column1.add(lines.get(i).toString());
+			column2.add(structures.get(i).toLastString());
+			column3.add(Hexer.hexArray(programBytes.get(i)));
+		}
+		int length1 = columnMaxLength(column1);
+		int length2 = columnMaxLength(column2);
+		//int length3 = columnMaxLength(column3);
+		String debug = "";
+		for (int i = 0; i < column1.size(); i++){
+			int position = lineToPosition(i);
+			debug += " ";
+			debug += column1.get(i);
+			debug += spaces(length1 - column1.get(i).length());
+			debug += " ; ";
+			debug += column2.get(i);
+			debug += spaces(length2 - column2.get(i).length());
+			debug += " ; ";
+			debug += spaces(5 - (position + "").length());
+			debug += position;
+			debug += " ";
+			debug += Hexer.hex(position);
+			debug += ": ";
+			debug += column3.get(i);
+			debug += "\n";
+		}
+		return debug;
+	}
+
+	private int columnMaxLength(List<String> column){
+		int max = 0;
+		for (String s : column)
+			if (max < s.length())
+				max = s.length();
+		return max;
+	}
+
+	private String spaces(int length){
+		String spaces = "";
+		for (int i = 0; i < length; i++)
+			spaces += " ";
+		return spaces;
+	}
+
 	public void setIncluder(Assembler.Includer includer){
 		this.bracketIncluder = includer;
 	}
@@ -453,6 +511,8 @@ public class Assembler{
 		public boolean programize(int linePosition, boolean finalize)
 			throws Exception;
 
+		public String toLastString();
+
 	}
 
 	private class AssembleFill implements AssembleStructure{
@@ -539,6 +599,14 @@ public class Assembler{
 			programBytes.put(linePosition, bytes);
 			return ! Arrays.equals(old, bytes);
 		}
+
+		public String toLastString(){
+			TextLine l = new TextLine(line);
+			l.set(1, lengthExp.toString());
+			if (l.size() == 3)
+				l.set(2, valueExp.toString());
+			return l.toString();
+		}
 	}
 
 	private class AssembleAlign implements AssembleStructure{
@@ -600,6 +668,12 @@ public class Assembler{
 			programBytes.put(linePosition, bytes);
 			return ! Arrays.equals(old, bytes);
 		}
+
+		public String toLastString(){
+			TextLine l = new TextLine(line);
+			l.set(1, boundaryExp.toString());
+			return l.toString();
+		}
 	}
 
 	private class AssembleData implements AssembleStructure{
@@ -613,6 +687,7 @@ public class Assembler{
 		public AssembleData(TextLine line)
 			throws Exception
 		{
+			line = new TextLine(line);
 			this.pack = line.remove(0).equals(".DP");
 			this.line = line;
 			data = new int[line.size()][];
@@ -838,6 +913,10 @@ public class Assembler{
 			return ! Arrays.equals(old, bytes);
 		}
 
+
+		public String toLastString(){
+			return "[DATA]";
+		}
 	}
 
 	private class AssembleInstruction implements AssembleStructure{
@@ -847,6 +926,7 @@ public class Assembler{
 		public AssembleInstructionData b;
 		public TextLine line;
 		private AssembleInstruction subbingFor;
+		private AssembleInstruction substitution;
 
 		private HashMap<String, Integer> instructionBytes;
 
@@ -917,6 +997,7 @@ public class Assembler{
 		{
 			AssembleInstruction sub = substitution(currentPosition, finalize);
 			if (sub != null){
+				substitution = sub;
 				int[] subBytes = sub.toBytes(currentPosition, finalize);
 				if (subbingFor == null)
 					System.out.println("Optimization: Using " + sub + " in place of " + this + " : " + sub.toHexParts(finalize) + "; " + Hexer.hexArray(subBytes));
@@ -1070,6 +1151,10 @@ public class Assembler{
 				return data;
 			}
 
+			public String toLastString(){
+				return exp.toString();
+			}
+
 			public void literalize(boolean finalize)
 				throws Exception
 			{
@@ -1086,7 +1171,7 @@ public class Assembler{
 					return easy;
 				literalize(finalize);
 				String register = findRegister(exp);
-				if (exp.isParenthesized() && data.charAt(0) == '['){
+				if (exp.isParenthesized() && (register != null || data.charAt(0) == '[')){
 					if (register != null){
 						Integer code = plusRegisters.get(register.toUpperCase());
 						if (code == null)
@@ -1214,6 +1299,17 @@ public class Assembler{
 			programBytes.put(linePosition, bytes);
 			return ! Arrays.equals(old, bytes);
 		}
+
+		public String toLastString(){
+			if (substitution != null)
+				return substitution.toLastString();
+			TextLine l = new TextLine(line);
+			l.set(1, a.toLastString());
+			if (l.size() == 3)
+				l.set(2, b.toLastString());
+			return l.toString();
+		}
 	}
 
 }
+

@@ -9,8 +9,10 @@ public class Assembler{
 		String outfile = args.length > 1 ? args[1] : getFilename("Output file (blank to print to screen)");
 		if (outfile.length() == 0)
 			System.out.println(as.assembleToHex());
-		else
+		else{
 			as.assemble(outfile);
+			as.debug(outfile + ".debug");
+		}
 	}
 
 	public static String getFilename(String ask){
