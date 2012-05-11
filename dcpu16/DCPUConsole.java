@@ -1,3 +1,4 @@
+package dcpu16;
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
@@ -13,7 +14,7 @@ import java.io.*;
 
 import hexer.*;
 
-class Console
+public class DCPUConsole
 	extends JFrame
 	implements Runnable
 {
@@ -30,13 +31,13 @@ class Console
 
 	private JTextArea screenTextArea;
 
-	public Console(Memory memory, int screenStart, int keyboardStart){
+	public DCPUConsole(Memory memory, int screenStart, int keyboardStart){
 		this.m = memory;
 		this.screenStart = screenStart;
 		this.keyboardStart = keyboardStart;
 	}
 
-	public Console(Memory memory){
+	public DCPUConsole(Memory memory){
 		this.m = memory;
 		this.screenStart = 0x8000;
 		this.keyboardStart = 0x9000;
@@ -160,7 +161,7 @@ class Console
 		final DCPU16 d = new DCPU16();
 		d.setSpeed(100000);
 		loadFromFile(args[0], d.memory());
-		new Thread(new Console(d.memory())).start();
+		new Thread(new DCPUConsole(d.memory())).start();
 		final boolean[] stop = new boolean[1];
 		new Thread(new Runnable(){
 			public void run(){

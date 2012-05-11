@@ -1,5 +1,6 @@
+package dcpu16;
 
-interface Accessor{
+public interface Accessor{
 
 	public int read();
 

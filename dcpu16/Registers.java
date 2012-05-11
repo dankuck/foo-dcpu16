@@ -1,3 +1,4 @@
+package dcpu16;
 
 import hexer.*;
 
@@ -5,17 +6,17 @@ public class Registers{
 
 	private int[] registers = new int[11];
 
-	final static int A = 0;
-	final static int B = 1;
-	final static int C = 2;
-	final static int X = 3;
-	final static int Y = 4;
-	final static int Z = 5;
-	final static int I = 6;
-	final static int J = 7;
-	final static int PC = 8;
-	final static int SP = 9;
-	final static int O = 10;
+	final public static int A = 0;
+	final public static int B = 1;
+	final public static int C = 2;
+	final public static int X = 3;
+	final public static int Y = 4;
+	final public static int Z = 5;
+	final public static int I = 6;
+	final public static int J = 7;
+	final public static int PC = 8;
+	final public static int SP = 9;
+	final public static int O = 10;
 
 	public int read(int r){
 		return registers[r] & 0xFFFF;

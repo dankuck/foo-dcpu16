@@ -1,3 +1,5 @@
+package dcpu16;
+
 // Specification: http://0x10c.com/doc/dcpu-16.txt
 
 import hexer.*;

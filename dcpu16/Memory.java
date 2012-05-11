@@ -1,3 +1,4 @@
+package dcpu16;
 
 import hexer.*;
 
