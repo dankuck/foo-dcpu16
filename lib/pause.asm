@@ -35,7 +35,7 @@
 	.end
 	
 	:_message
-	DAT p"================================ Call to pause with A too high,  maxes out at 4000 milliseconds ================================", 0x0
+	DAT p"Call to pause with A too high,  maxes out at 4000 milliseconds", 0x0
 	
 	:_crash
 	.ifdef crash

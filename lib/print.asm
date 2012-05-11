@@ -11,8 +11,13 @@
 
 .ifndef print
 
+.def display_start           0x8000
+.def display_length          0x180
+.def display_end             display_start+display_length
+.def display_last_line_start display_start+0x160
+
 :cursor_position
-DAT 0x8000
+DAT display_start
 
 ;prints a number prefixed string
 :print	; (A = string pointer)
@@ -52,14 +57,14 @@ DAT 0x8000
 	SET PC, _print_newline
 	
 	:_check_scroll_screen
-	IFN B, 0x8180
+	IFN B, display_end
 		SET PC, POP
 	SET PUSH, A
 	SET PUSH, C
 	JSR scroll_screen
 	SET C, POP
 	SET A, POP
-	SET B, 0x8160
+	SET B, display_last_line_start
 	SET PC, POP
 
 ;print a null-char delimited string
@@ -97,27 +102,27 @@ DAT 0x8000
 	
 
 	:_check_scroll_screen
-	IFN B, 0x8180
+	IFN B, display_end
 		SET PC, POP
 	SET PUSH, A
 	SET PUSH, C
 	JSR scroll_screen
 	SET C, POP
 	SET A, POP
-	SET B, 0x8160
+	SET B, display_last_line_start
 	SET PC, POP
 	
 :scroll_screen
-	SET A, 0x8000
+	SET A, display_start
 	:_scroll_loop
 	SET [A], [32+A]
 	ADD A, 1
-	IFN A, 0x8160
+	IFN A, display_last_line_start
 		SET PC, _scroll_loop
 	:_clear_bottom_line_loop
 	SET [A], 0
 	ADD A, 1
-	IFN A, 0x8180
+	IFN A, display_end
 		SET PC, _clear_bottom_line_loop
 	SET PC, POP
 
@@ -157,7 +162,7 @@ DAT 0x8000
 :print_signed_number ; (A = number to print)
 	SET PUSH, B
 	SET B, A
-	AND B, 0x8000
+	AND B, display_start
 	IFE B, 0
 		SET PC, _print_as_if_unsigned
 	SET PUSH, A
