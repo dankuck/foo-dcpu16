@@ -135,9 +135,9 @@ public class Lexer{
 			return;
 		}
 		else if (preprocessor.equals("def") || preprocessor.equals("define") || preprocessor.equals("equ")){
-			if (line.size() < 2 || line.size() > 3)
+			String[] parts = line.get(1).split("\\s+");
+			if (parts.length < 2 || parts.length > 3)
 				throw new Exception("Wrong token count on line " + line);
-			String[] parts = line.get(1).split("\\s");
 			String name = parts[0];
 			int value = 1;
 			if (parts.length > 2)
