@@ -444,6 +444,10 @@ public class Assembler{
 		return currentGlobalLabel;
 	}
 
+	public void currentGlobalLabel(String set){
+		currentGlobalLabel = set;
+	}
+
 	public List<String> interpretMacroParts(List<String> line)
 		throws Exception
 	{

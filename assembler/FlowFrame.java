@@ -14,6 +14,7 @@ public class FlowFrame{
 	public int currentLine;
 	public List<TextLine> lines;
 	public boolean runningFromAddedLines;
+	public String globalLabel;
 	public FlowFrame(int type){
 		this.type = type;
 		if (isRep() || isMacro())
