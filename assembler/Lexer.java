@@ -34,65 +34,70 @@ public class Lexer{
 	public void lex()
 		throws Exception
 	{
-		FlowFrame bottom = new FlowFrame(FlowFrame.BOTTOM);
-		bottom.active = true;
-		pushFlow(bottom);
-		int startSize = flowstack.size();
-		while (true){
-			FlowFrame flowtop = flowtop();
-			if (flowtop == null)
-				throw new Exception("Something went wrong with the flowstack.");
-			assembler.currentGlobalLabel(flowtop.globalLabel);
-			FlowFrame lineSource = lineSource();
-			TextLine line;
-			if (lineSource != null){
-				line = lineSource.nextLine();
-			}
-			else if (! hasMoreLines())
-				break;
-			else
-				line = nextLine();
-			//System.out.println("- " + line);
-			for (int i = flowstack.size() - 1; i >= 0; i--){
-				FlowFrame r = flowstack.get(i);
-				if (r.runningFromAddedLines)
-					break;
-				r.addLine(line);
-			}
-			boolean isPreprocessor = isPreprocessor(line.get(0));
-			String preprocessor = cleanPreprocessor(line.get(0));
-			boolean skippingLines = ! flowtop.active;
-			boolean isFlowRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef") || preprocessor.equals("rep") || preprocessor.equals("macro") || preprocessor.equals("end"));
-			if (skippingLines && ! isFlowRelated)
-				continue;
-			if (isPreprocessor){
-				preprocess(preprocessor, line);
-				continue;
-			}
-			if (line.get(0).indexOf('(') >= 0){
-				FlowFrame calledMacro = callMacro(line);
-				calledMacro.active = true;
-				calledMacro.runningFromAddedLines = true;
-				pushFlow(calledMacro);
-				lineSources.add(calledMacro);
-				continue;
-			}
-			if (line.get(0).charAt(0) == ':' || line.get(0).charAt(line.get(0).length() - 1) == ':'){
+		try{
+			FlowFrame bottom = new FlowFrame(FlowFrame.BOTTOM);
+			bottom.active = true;
+			pushFlow(bottom);
+			int startSize = flowstack.size();
+			while (true){
+				FlowFrame flowtop = flowtop();
+				if (flowtop == null)
+					throw new Exception("Something went wrong with the flowstack.");
 				assembler.currentGlobalLabel(flowtop.globalLabel);
-				assembler.addLabel(line.get(0).replaceAll("^:|:$", ""), org);
-				flowtop.globalLabel = assembler.currentGlobalLabel();
-				continue;
+				FlowFrame lineSource = lineSource();
+				TextLine line;
+				if (lineSource != null){
+					line = lineSource.nextLine();
+				}
+				else if (! hasMoreLines())
+					break;
+				else
+					line = nextLine();
+				//System.out.println("- " + line);
+				for (int i = flowstack.size() - 1; i >= 0; i--){
+					FlowFrame r = flowstack.get(i);
+					if (r.runningFromAddedLines)
+						break;
+					r.addLine(line);
+				}
+				boolean isPreprocessor = isPreprocessor(line.get(0));
+				String preprocessor = cleanPreprocessor(line.get(0));
+				boolean skippingLines = ! flowtop.active;
+				boolean isFlowRelated = isPreprocessor && (preprocessor.equals("if") || preprocessor.equals("elif") || preprocessor.equals("elseif") || preprocessor.equals("else") || preprocessor.equals("ifdef")|| preprocessor.equals("ifndef") || preprocessor.equals("rep") || preprocessor.equals("macro") || preprocessor.equals("end"));
+				if (skippingLines && ! isFlowRelated)
+					continue;
+				if (isPreprocessor){
+					preprocess(preprocessor, line);
+					continue;
+				}
+				if (line.get(0).indexOf('(') >= 0){
+					FlowFrame calledMacro = callMacro(line);
+					calledMacro.active = true;
+					calledMacro.runningFromAddedLines = true;
+					pushFlow(calledMacro);
+					lineSources.add(calledMacro);
+					continue;
+				}
+				if (line.get(0).charAt(0) == ':' || line.get(0).charAt(line.get(0).length() - 1) == ':'){
+					assembler.currentGlobalLabel(flowtop.globalLabel);
+					assembler.addLabel(line.get(0).replaceAll("^:|:$", ""), org);
+					flowtop.globalLabel = assembler.currentGlobalLabel();
+					continue;
+				}
+				if (line.size() == 0)
+					throw new Exception("Somehow ended up with a 0 length line");
+				if (! line.get(0).equalsIgnoreCase("DAT") && line.size() > 3)
+					throw new Exception("Too many tokens on line " + line.size() + ": " + line);
+				assembler.addInstruction(line);
 			}
-			if (line.size() == 0)
-				throw new Exception("Somehow ended up with a 0 length line");
-			if (! line.get(0).equalsIgnoreCase("DAT") && line.size() > 3)
-				throw new Exception("Too many tokens on line " + line.size() + ": " + line);
-			assembler.addInstruction(line);
+			if (flowstack.size() < startSize)
+				throw new Exception("There are too many ends");
+			if (flowstack.size() > startSize)
+				throw new Exception("There are not enough ends");
 		}
-		if (flowstack.size() < startSize)
-			throw new Exception("There are too many ends");
-		if (flowstack.size() > startSize)
-			throw new Exception("There are not enough ends");
+		catch (Exception e){
+			throw new Exception("Exception at " + filename + " " + currentLine + " in " + assembler.currentGlobalLabel() + ": " /*+ line*/ + " : " + e.getMessage(), e);
+		}
 	}
 
 	private FlowFrame callMacro(List<String> line)
