@@ -108,6 +108,7 @@ public class Lexer{
 	}
 
 	private void pushFlow(FlowFrame frame){
+		frame.globalLabel = assembler.currentGlobalLabel();
 		flowstack.add(frame);
 	}
 
