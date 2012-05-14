@@ -13,11 +13,14 @@ public class Lexer{
 	private List<FlowFrame> lineSources = new ArrayList<FlowFrame>();
 	private List<TextLine> nextLines = new ArrayList<TextLine>();
 	private int org = 0;
+	private String filename;
+	private int currentLine = 0;
 
-	public Lexer(Assembler assembler, String contents){
+	public Lexer(Assembler assembler, String contents, String filename){
 		this.assembler = assembler;
 		contents += "\n"; // \n helps us make sure we get the last token
 		tokens = new StringTokenizer(contents, ";, \t\n\r\f\"\\{}", true);
+		this.filename = filename;
 	}
 
 	private FlowFrame flowtop(){
@@ -33,12 +36,13 @@ public class Lexer{
 	{
 		FlowFrame bottom = new FlowFrame(FlowFrame.BOTTOM);
 		bottom.active = true;
-		flowstack.add(bottom);
+		pushFlow(bottom);
 		int startSize = flowstack.size();
 		while (true){
 			FlowFrame flowtop = flowtop();
 			if (flowtop == null)
 				throw new Exception("Something went wrong with the flowstack.");
+			assembler.currentGlobalLabel(flowtop.globalLabel);
 			FlowFrame lineSource = lineSource();
 			TextLine line;
 			if (lineSource != null){
@@ -69,7 +73,7 @@ public class Lexer{
 				FlowFrame calledMacro = callMacro(line);
 				calledMacro.active = true;
 				calledMacro.runningFromAddedLines = true;
-				flowstack.add(calledMacro);
+				pushFlow(calledMacro);
 				lineSources.add(calledMacro);
 				continue;
 			}
@@ -103,6 +107,14 @@ public class Lexer{
 		return macro.interpolate(params);
 	}
 
+	private void pushFlow(FlowFrame frame){
+		flowstack.add(frame);
+	}
+
+	private FlowFrame popFlow(){
+		return flowstack.remove(flowstack.size() - 1);
+	}
+
 	private void preprocess(String preprocessor, TextLine line)
 		throws Exception
 	{
@@ -115,7 +127,7 @@ public class Lexer{
 			if (! new File(path).exists())
 				System.out.println(path + " not exists");
 			else
-				new Lexer(assembler, assembler.contents(path)).lex();
+				new Lexer(assembler, assembler.contents(path), path).lex();
 			return;
 		}
 		else if (preprocessor.equals("incbin")){
@@ -175,7 +187,7 @@ public class Lexer{
 				newtop.active = false;
 				newtop.skiprest = true;
 				//System.out.println("Adding inactive if to stack");
-				flowstack.add(newtop);
+				pushFlow(newtop);
 				return;
 			}
 			if (line.size() != 2)
@@ -193,7 +205,7 @@ public class Lexer{
 			FlowFrame newtop = new FlowFrame(FlowFrame.IF);
 			newtop.active = result;
 			newtop.skiprest = result;
-			flowstack.add(newtop);
+			pushFlow(newtop);
 			return;
 		}
 		else if (preprocessor.equals("elif") || preprocessor.equals("elsif")){
@@ -230,7 +242,7 @@ public class Lexer{
 				//System.out.println("Adding inactive rep to stack");
 				FlowFrame rep = new FlowFrame(FlowFrame.REP);
 				rep.active = false;
-				flowstack.add(rep);
+				pushFlow(rep);
 				return;
 			}
 			if (line.size() != 2)
@@ -242,7 +254,7 @@ public class Lexer{
 			FlowFrame rep = new FlowFrame(FlowFrame.REP);
 			rep.active = false;
 			rep.countDown = exp.numericValue();
-			flowstack.add(rep);
+			pushFlow(rep);
 			return;
 		}
 		else if (preprocessor.equals("macro")){
@@ -250,7 +262,7 @@ public class Lexer{
 				//System.out.println("Adding inactive rep to stack");
 				FlowFrame mac = new FlowFrame(FlowFrame.MACRO);
 				mac.active = false;
-				flowstack.add(mac);
+				pushFlow(mac);
 				return;
 			}
 			line.remove(0);
@@ -260,7 +272,7 @@ public class Lexer{
 			mac.active = false;
 			Macro m = new Macro(name, params, mac);
 			assembler.addMacro(name, m);
-			flowstack.add(mac);
+			pushFlow(mac);
 			return;
 		}
 		else if (preprocessor.equals("end")){
@@ -270,7 +282,7 @@ public class Lexer{
 				//System.out.println("Removing " + (flowtop.isRep() ? "rep" : "if") + " from stack");
 				if (lineSource == flowtop)
 					lineSources.remove(lineSources.size() - 1);
-				flowstack.remove(flowstack.size() - 1);
+				popFlow();
 			}
 			else if (flowtop.isRep() && ! flowtop.runningFromAddedLines){
 				//System.out.println("First repeat (second run)");
@@ -336,6 +348,11 @@ public class Lexer{
 		return line;
 	}
 
+	private void queueLine(TextLine line){
+		line.setLocation(filename, currentLine);
+		nextLines.add(line);
+	}
+
 	private void queueLine()
 		throws Exception
 	{
@@ -348,9 +365,10 @@ public class Lexer{
 		boolean inQuotes = false;
 		while (tokens.hasMoreTokens()){
 			String token = tokens.nextToken();
-			if (token.charAt(0) == '{' && ! inComment){
+			if (token.equals("\n"))
+				currentLine ++;
+			if (token.charAt(0) == '{' && ! inComment)
 				token = "\n";
-			}
 			boolean isEndCurly = token.charAt(0) == '}' && ! inComment;
 			boolean isLabel = (token.charAt(0) == ':' || token.charAt(token.length() - 1) == ':') && ! inComment;
 			if (token.equals("\n") || isEndCurly || isLabel){
@@ -365,11 +383,11 @@ public class Lexer{
 					line.add(token);
 				}
 				if (line.size() > 0)
-					nextLines.add(line);
+					queueLine(line);
 				if (isEndCurly){
 					TextLine curly = new TextLine();
 					curly.add("}");
-					nextLines.add(curly);
+					queueLine(curly);
 				}
 				if (nextLines.size() > 0)
 					return;
