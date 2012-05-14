@@ -83,5 +83,22 @@
 	JSR sdiv
 	SET s1, A
 }
+
+.macro neg(target){
+	XOR target, 0xFFFF
+	ADD target, 1
+}
+
+:abs
+	IFG 0x8000, A
+		SET PC, POP
+	neg(A)
+	SET PC, POP
+	
+:neg	
+	XOR A, 0xFFFF
+	ADD A, 1
+	SET PC, POP
+	
 	
 .end
