@@ -6,6 +6,8 @@ import java.util.*;
 public class TextLine extends ArrayList<String>{
 
 	private String globalLabel;
+	private String lineFile;
+	private int lineNumber;
 
 	public TextLine(){
 		super();
@@ -18,6 +20,8 @@ public class TextLine extends ArrayList<String>{
 	public TextLine(TextLine copy){
 		super(copy);
 		globalLabel = copy.globalLabel;
+		lineFile = copy.lineFile;
+		lineNumber = copy.lineNumber;
 	}
 
 	public void globalLabel(String globalLabel){
@@ -26,6 +30,27 @@ public class TextLine extends ArrayList<String>{
 
 	public String globalLabel(){
 		return globalLabel;
+	}
+
+	public void lineNumber(int set){
+		lineNumber = set;
+	}
+
+	public int lineNumber(){
+		return lineNumber;
+	}
+
+	public void lineFile(String set){
+		lineFile = set;
+	}
+
+	public String lineFile(){
+		return lineFile;
+	}
+
+	public void setLocation(String file, int line){
+		lineFile(file);
+		lineNumber(line);
 	}
 
 	public String toString(){

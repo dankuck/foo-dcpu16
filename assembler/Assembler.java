@@ -231,37 +231,45 @@ public class Assembler{
 	private void programize()
 		throws Exception
 	{
-		/*
-		The finalize parameter (the second parameter passed to AssemblerStructure.programize)
-		says two things when true:
-		(1) that all labels should have some alignment by now
-		(2) that the instruction is allowed to make adjustments to size, but it should try not to
+		TextLine line = null;
+		try{
+			/*
+			The finalize parameter (the second parameter passed to AssemblerStructure.programize)
+			says two things when true:
+			(1) that all labels should have some alignment by now
+			(2) that the instruction is allowed to make adjustments to size, but it should try not to
 
-		This means that most instructions that can make adjustments will make one last size adjustment
-		on the second pass, and no size adjustments on the third pass (but maybe still value adjustments),
-		and no adjustments at all on the fourth pass.
-		 */
-		for (int i = 0; i < lines.size(); i++){
-			//System.out.println("Adding line " + i);
-			structures.get(i).programize(i, false);
-		}
-		boolean ready = false;
-		for (int k = 0; k < 8 && ! ready; k++){ // eight passes is really ridiculously high, so we'll stop there and give an error.
-			ready = true;
+			This means that most instructions that can make adjustments will make one last size adjustment
+			on the second pass, and no size adjustments on the third pass (but maybe still value adjustments),
+			and no adjustments at all on the fourth pass.
+			 */
 			for (int i = 0; i < lines.size(); i++){
-				//System.out.println("Checking line " + i);
-				if (structures.get(i).programize(i, true))
-					ready = false;
+				//System.out.println("Adding line " + i);
+				line = structures.get(i).getLine();
+				structures.get(i).programize(i, false);
+			}
+			boolean ready = false;
+			for (int k = 0; k < 8 && ! ready; k++){ // eight passes is really ridiculously high, so we'll stop there and give an error.
+				ready = true;
+				for (int i = 0; i < lines.size(); i++){
+					line = structures.get(i).getLine();
+					//System.out.println("Checking line " + i);
+					if (structures.get(i).programize(i, true))
+						ready = false;
+				}
+			}
+			if (! ready)
+				throw new Exception("The code won't stay put. Maybe it would behave if you check for instructions that change size based on a label later in the program.");
+			program = new int[length()];
+			int position = 0;
+			for (int i = 0; i < lines.size(); i++){
+				//System.out.println("Programizing line " + i + " position: " + position);
+				System.arraycopy(programBytes.get(i), 0, program, position, programBytes.get(i).length);
+				position += programBytes.get(i).length;
 			}
 		}
-		if (! ready)
-			throw new Exception("The code won't stay put. Maybe it would behave if you check for instructions that change size based on a label later in the program.");
-		program = new int[length()];
-		int position = 0;
-		for (int i = 0; i < lines.size(); i++){
-			//System.out.println("Programizing line " + i + " position: " + position);
-			System.arraycopy(programBytes.get(i), 0, program, position, programBytes.get(i).length);
-			position += programBytes.get(i).length;
+		catch (Exception e){
+			throw new Exception("Exception at " + line.lineFile() + " " + line.lineNumber() + " in " + line.globalLabel() + ": " + line + " : " + e.getMessage(), e);
 		}
 	}
 
@@ -490,7 +498,7 @@ public class Assembler{
 	private void lexize(String contents)
 		throws Exception
 	{
-		new Lexer(this, contents).lex();
+		new Lexer(this, contents, filename).lex();
 	}
 
 	public String getPath(String token)
@@ -517,6 +525,7 @@ public class Assembler{
 
 		public String toLastString();
 
+		public TextLine getLine();
 	}
 
 	private class AssembleFill implements AssembleStructure{
@@ -611,6 +620,11 @@ public class Assembler{
 				l.set(2, valueExp.toString());
 			return l.toString();
 		}
+
+
+		public TextLine getLine(){
+			return new TextLine(line);
+		}
 	}
 
 	private class AssembleAlign implements AssembleStructure{
@@ -677,6 +691,10 @@ public class Assembler{
 			TextLine l = new TextLine(line);
 			l.set(1, boundaryExp.toString());
 			return l.toString();
+		}
+
+		public TextLine getLine(){
+			return new TextLine(line);
 		}
 	}
 
@@ -920,6 +938,10 @@ public class Assembler{
 
 		public String toLastString(){
 			return "[DATA]";
+		}
+
+		public TextLine getLine(){
+			return new TextLine(line);
 		}
 	}
 
@@ -1312,6 +1334,10 @@ public class Assembler{
 			if (l.size() == 3)
 				l.set(2, b.toLastString());
 			return l.toString();
+		}
+
+		public TextLine getLine(){
+			return new TextLine(line);
 		}
 	}
 
