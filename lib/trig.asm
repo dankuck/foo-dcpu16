@@ -31,10 +31,7 @@
 	; reflect left half of circle onto right half
 	IFG halfpi100+1, A
 		SET PC, _done_reflect
-	SET C, A
-	SUB C, halfpi100
-	SET A, halfpi100
-	SUB A, C
+	JSR reflect_angle_horizontally
 	:_done_reflect
 	; get sin from table
 	SET A, [sin_table+A]
@@ -62,7 +59,7 @@
 	IFG A, 100
 		SET PC, _print_and_die
 	SET A, [asin_table+A]
-	IFE B, 0x8000
+	IFN B, 0x8000
 		SET PC, _done_resign
 	neg(A)
 	:_done_resign
@@ -141,6 +138,13 @@
 	:_done_resign
 	SET PC, POP
 
+:reflect_angle_horizontally
+	SET C, halfpi100
+	SUB C, A
+	SET A, halfpi100
+	ADD A, C
+	SET PC, POP
+
 :radians_to_degrees ; (A = radians * 100)
 	; degrees = 180 * radians / PI
 	; degrees = 100 * 180 * radians / (PI * 100)
@@ -176,7 +180,7 @@
 	:_done_resign
 	JSR normalize_angle
 	SET PC, POP
-	
+
 
 :sin_table
 .dw 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
