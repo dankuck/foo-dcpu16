@@ -1,10 +1,21 @@
 ; Figure how far away a thing is based on its angle and your distance from another thing
 ;
+; Features:
+;   16-bit signed integer math, using radians*100
+;   0xSCA standards compliant
+;   Adheres to the 0x10cStandardsCommittee ABI
+; 
+; Link: https://github.com/dankuck/foo-dcpu16/blob/master/lib/triangulate
+; Libraries:
+;       https://github.com/dankuck/foo-dcpu16/blob/master/lib/trig.asm
+;       https://github.com/dankuck/foo-dcpu16/blob/master/lib/sqrt16.asm
+;
 ; Author: while1dan
 
 .ifndef triangulate
 
-.include "lib/point2angle.asm"
+.include "lib/trig.asm"
+.include "lib/sqrt16.asm"
 
 ; In a triangle formed by the target, the point 0,0 and a helper:
 ; A = the angle at 0,0

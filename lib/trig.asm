@@ -1,14 +1,19 @@
 ; Provides trigonometric functions.
 ; You need some trig to navigate space, my friend.
 ;
-; We could use a Taylor series for sin() but it is apt
-; to be slow and imprecise when using integers.
+; Uses tables of values. Fast and more precise than working it out via integer math.
 ;
-; So we just use a table. Fast and more precise.
+; Features:
+;   16-bit signed integer math, using radians*100
+;   0xSCA standards compliant
+;   Adheres to the 0x10cStandardsCommittee ABI
+;   Convert between degrees and radians
 ;
-; Works on signed 16-bit integers
+; Link: https://github.com/dankuck/foo-dcpu16/blob/master/lib/trig.asm
+; Libraries:
+;       https://github.com/dankuck/foo-dcpu16/blob/master/lib/signedint.asm
 ;
-; Author: while1dan (aka dankuck)
+; Author: while1dan
 
 
 .ifndef sin
@@ -19,7 +24,7 @@
 .def halfpi100 157
 .def twopi100  628
 
-:sin ; (A = angle in radians * 100, result: A = sin * 100)
+:sin ; (A = angle in radians * 100, result: A = sin(angle in radians) * 100)
 	JSR normalize_angle
 	; set to positive, but remember if it was negative
 	SET B, A
@@ -42,12 +47,12 @@
 	:_done_resign
 	SET PC, POP
 	
-:cos ; (A = angle in radians * 100)
+:cos ; (A = angle in radians * 100; result: A = cos(angle in radians)*100)
 	JSR normalize_angle
 	ADD A, halfpi100
 	SET PC, sin
 
-:asin ; (A = sin(angle in radians) * 100)
+:asin ; (A = sin(angle in radians) * 100; result: A = angle in radians*100)
 	; set to positive, but remember if it was negative
 	SET B, A
 	AND B, 0x8000
@@ -78,13 +83,13 @@
 	:_message
 		.dw p"Too large number passed to asin or acos."
 
-:acos ; (A = cos(angle in radians) * 100)
+:acos ; (A = cos(angle in radians)*100, result: A = angle in radians*100)
 	JSR asin
 	SUB A, halfpi100
 	JSR normalize_angle
 	SET PC, POP
 	
-:tan ; (A = angle in radians * 100)
+:tan ; (A = angle in radians * 100, result: A = tan(angle in radians)*100, from -0x7FFF to +0x7FFF)
 	SET PUSH, X
 	SET PUSH, Y
 	SET X, A
@@ -112,7 +117,7 @@
 	SET PC, POP
 	
 	
-:normalize_angle ; (A = angle in radians * 100)
+:normalize_angle ; (A = angle in radians*100, result: A = angle in radians*100 between -PI and +PI)
 	; if it's negative, lets turn it positive and work it that way. then we'll negate the answer later
 	SET B, A
 	AND B, 0x8000
@@ -138,14 +143,14 @@
 	:_done_resign
 	SET PC, POP
 
-:reflect_angle_horizontally
+:reflect_angle_horizontally ; (A = angle in radians*100, result: A = angle reflected horizontally)
 	SET C, halfpi100
 	SUB C, A
 	SET A, halfpi100
 	ADD A, C
 	SET PC, POP
 
-:radians_to_degrees ; (A = radians * 100)
+:radians_to_degrees ; (A = radians*100, result: A = degrees)
 	; degrees = 180 * radians / PI
 	; degrees = 100 * 180 * radians / (PI * 100)
 	;JSR normalize_angle
@@ -163,7 +168,7 @@
 	:_done_resign
 	SET PC, POP
 
-:degrees_to_radians
+:degrees_to_radians ; (A = degrees, result: A = radians*100)
 	; radians = PI * degrees / 180
 	; radians * 100 = 100 * PI * degrees / 180
 	SET C, A

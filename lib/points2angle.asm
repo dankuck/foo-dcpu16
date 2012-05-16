@@ -1,5 +1,15 @@
 ; Given two points in 2 dimensions, figure the angle
 ;
+; Features:
+;   16-bit signed integer math, using radians*100
+;   0xSCA standards compliant
+;   Adheres to the 0x10cStandardsCommittee ABI
+;
+; Link: https://github.com/dankuck/foo-dcpu16/blob/master/lib/points2angle.asm
+; Libraries:
+;       https://github.com/dankuck/foo-dcpu16/blob/master/lib/trig.asm
+;       https://github.com/dankuck/foo-dcpu16/blob/master/lib/sqrt16.asm
+;
 ; Author: while1dan
 
 .ifndef points2angle

@@ -1,16 +1,23 @@
-; Functions for working with signed 16-bit integers
-; For integers in two's complement notation. But really, 
-; who would do anything else?
+; Work with signed 16-bit integers
+; For integers in two's complement notation.
+;
 ; ADD and SUB already work for signed integers, so 
 ; they are not provided here.
 ;
+; Features:
+;   16-bit signed integer math
+;   0xSCA standards compliant
+;   Adheres to the 0x10cStandardsCommittee ABI
+;
+; Link: https://github.com/dankuck/foo-dcpu16/blob/master/lib/signedint.asm
+; 
 ; Author: while1dan
 
 
 .ifndef signed_int_math
 .def signed_int_math 1
 
-:smul ; (multiplies A and B)
+:smul ; (result: A=A*B)
 	SET PUSH, X
 	SET C, A
 	AND C, 0x8000
@@ -40,7 +47,7 @@
 	SET X, POP
 	SET PC, POP
 
-:sdiv ; (divides A and B)
+:sdiv ; (result: A=A/B)
 	SET PUSH, X
 	SET C, A
 	AND C, 0x8000
@@ -84,18 +91,18 @@
 	SET s1, A
 }
 
-.macro neg(target){
+.macro neg(target){ ; result: target=-target
 	XOR target, 0xFFFF
 	ADD target, 1
 }
 
-:abs
+:abs ; (result: target=|target|)
 	IFG 0x8000, A
 		SET PC, POP
 	neg(A)
 	SET PC, POP
 	
-:neg	
+:neg ; (result: target=-target)
 	XOR A, 0xFFFF
 	ADD A, 1
 	SET PC, POP
