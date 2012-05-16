@@ -32,7 +32,7 @@
 	
 	SET A, B	; y^2
 	JSR abs
-	SET Y, B
+	SET Y, A
 	MUL Y, Y
 	
 	SET Z, X	; z = sqrt(x^2 + y^2)
