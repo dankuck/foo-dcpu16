@@ -1,3 +1,9 @@
+/*
+ * This file runs a program with screen and keyboard support.
+ * Usage: java DCPU16Screen program_file
+ * If the program_file ends in .asm, this will attempt to compile the file first.
+ * Otherwise, it will assume that the file already contains compiled code.
+ */
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
