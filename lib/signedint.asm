@@ -21,35 +21,10 @@
 .ifndef signed_int_math
 .def signed_int_math 1
 
-:sdiv ; (result: A=A/B)
-	SET PUSH, X
-	SET C, A
-	AND C, 0x8000
-	IFN C, 0x8000
-		SET PC, _A_isnt_neg
-	XOR A, 0xFFFF
-	ADD A, 1
-	:_A_isnt_neg
-	IFG 0x8000, B
-		SET PC, _B_isnt_neg
-	XOR B, 0xFFFF
-	ADD B, 1
-	XOR C, 0xFFFF
-	AND C, 0x8000
-	:_B_isnt_neg
-	DIV A, B
-	;SHL O, 1
-	;SET X, A
-	;SHR X, 15
-	;BOR O, X
-	AND A, 0x7FFF
-	IFE C, 0
-		SET PC, _done
-	XOR A, 0xFFFF
-	ADD A, 1
-	:_done
-	SET X, POP
-	SET PC, POP
+.macro neg(target){ ; result: target=-target
+	XOR target, 0xFFFF
+	ADD target, 1
+}
 
 .macro sdiv(s1, s2){
 	SET A, s1
@@ -58,10 +33,31 @@
 	SET s1, A
 }
 
-.macro neg(target){ ; result: target=-target
-	XOR target, 0xFFFF
-	ADD target, 1
-}
+:sdiv ; (result: A=A/B)
+	IFG A, 0x7fff
+		SET PC, _a_neg
+	IFG B, 0x7fff
+		SET PC, _a_pos_b_neg
+	:_both_positive
+	DIV A, B
+	SET PC, POP
+	:_a_neg
+	IFG B, 0x7fff
+		SET PC, _both_neg
+	neg(A)
+	DIV A, B
+	neg(A)
+	SET PC, POP
+	:_a_pos_b_neg
+	neg(B)
+	DIV A, B
+	neg(A)
+	SET PC, POP
+	:_both_neg
+	neg(A)
+	neg(B)
+	DIV A, B
+	SET PC, POP
 
 :abs ; (result: target=|target|)
 	IFG 0x8000, A
