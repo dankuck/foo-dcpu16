@@ -36,8 +36,7 @@
 	
 	SET A, Y
 	JSR sin
-	SET B, Z
-	JSR smul
+	MUL A, Z
 	SET B, X
 	JSR sdiv
 	

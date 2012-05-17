@@ -21,20 +21,9 @@
 	SET Z, C
 	SET I, SP
 	
-	SET A, X
-	SET B, [I+6]
-	JSR smul
-	SET X, A
-	
-	SET A, Y
-	SET B, [I+7]
-	JSR smul
-	SET Y, A
-	
-	SET A, Z
-	SET B, [I+8]
-	JSR smul
-	SET Z, A
+	MUL X, [I+6]
+	MUL Y, [I+7]
+	MUL Z, [I+8]
 	
 	ADD X, Y
 	ADD X, Z

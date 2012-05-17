@@ -99,10 +99,9 @@
 	JSR sin
 	IFE Y, 0
 		SET PC, _inf
-	SET B, 100
-	JSR SMUL
+	MUL A, 100
 	SET B, Y
-	JSR SDIV
+	JSR sdiv
 	SET PC, _return
 	:_inf
 	IFG A, 0x7FFF

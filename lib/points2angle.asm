@@ -52,8 +52,7 @@
 	SET Z, A
 	
 	SET A, J	; 100*vertical/distance
-	SET B, 100
-	JSR smul
+	MUL A, 100
 	SET B, Z
 	JSR sdiv
 	SET J, A
@@ -83,16 +82,14 @@
 	SET Z, B
 	
 	JSR cos
-	SET B, Z
-	JSR smul
+	MUL A, Z
 	SET B, 100
 	JSR sdiv
 	SET X, A
 	
 	SET A, Y
 	JSR sin
-	SET B, Z
-	JSR smul
+	MUL A, Z
 	SET B, 100
 	JSR sdiv
 	SET Y, A
