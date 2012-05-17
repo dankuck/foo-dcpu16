@@ -5,8 +5,8 @@
 ;
 ; sdiv does signed division
 ; neg flips the sign on a signed integer
-; abs flips the sign to positive on a signed integer
-; neg(target) does inline sign flippage
+; abs sets the sign to positive on a signed integer
+; neg(target) does sign flippage without a JSR
 ;
 ; Features:
 ;   16-bit signed integer math
