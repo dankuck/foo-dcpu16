@@ -1,3 +1,6 @@
+/*
+ * Usage: java Assembler input.asm output.x
+ */
 
 public class Assembler{
 
