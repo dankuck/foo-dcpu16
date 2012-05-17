@@ -1,5 +1,7 @@
-
-// Holds multiple DCPU16's and lets us fiddle with them
+/*
+ * Load up any number of DCPU16's, run them, fiddle with their memory and registers. Whatever you like.
+ * Usage: java Harness
+ */
 
 import java.util.*;
 import java.io.*;
