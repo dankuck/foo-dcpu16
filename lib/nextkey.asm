@@ -17,12 +17,12 @@
 	add i,0x9000
 	set target,[i]
 	ife target,0
-		jmp nextkey_end
+		jmp(end)
 	
 	set [i],0
 	add [keypointer], 1
 	and [keypointer], 0xf
-:nextkey_end
+:end
 	pop(i)
 }
 

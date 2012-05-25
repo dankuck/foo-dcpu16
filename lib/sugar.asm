@@ -36,3 +36,11 @@
 	SET PC, POP
 }
 .end
+
+
+.ifndef jmp_macro
+.def jmp_macro 1
+.macro jmp(target){
+	SET PC, target
+}
+.end
