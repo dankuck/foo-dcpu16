@@ -80,7 +80,7 @@ public class Lexer{
 				}
 				if (line.get(0).charAt(0) == ':' || line.get(0).charAt(line.get(0).length() - 1) == ':'){
 					assembler.currentGlobalLabel(flowtop.globalLabel);
-					assembler.addLabel((line.labelPrefix() == null ? "" : line.labelPrefix()) + line.get(0).replaceAll("^:|:$", ""), org);
+					assembler.addLabel((line.scope() == null ? "" : line.scope()) + line.get(0).replaceAll("^:|:$", ""), org);
 					flowtop.globalLabel = assembler.currentGlobalLabel();
 					continue;
 				}
@@ -100,7 +100,7 @@ public class Lexer{
 		}
 	}
 
-	private FlowFrame callMacro(List<String> line)
+	private FlowFrame callMacro(TextLine line)
 		throws Exception
 	{
 		List<String> params = assembler.interpretMacroParts(line);
@@ -109,7 +109,7 @@ public class Lexer{
 		Macro macro = assembler.getMacro(name);
 		if (macro == null)
 			throw new Exception("Undefined macro");
-		return macro.interpolate(params);
+		return macro.interpolate(params, line.scope());
 	}
 
 	private void pushFlow(FlowFrame frame){

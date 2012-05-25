@@ -15,20 +15,20 @@ public class Macro{
 		this.lines = lines;
 	}
 
-	public FlowFrame interpolate(List<String> substitutions)
+	public FlowFrame interpolate(List<String> substitutions, Scope outerScope)
 		throws Exception
 	{
 		if (params.size() != substitutions.size())
 			throw new Exception("Substitutions size doesn't match parameter size");
 		counter++;
-		String labelPrefix = name + "_" + counter + "::";
+		Scope scope = new Scope(outerScope, name + "_" + counter);
 		HashMap<String, String> regexes = new HashMap<String, String>();
 		for (int i = 0; i < params.size(); i++)
 			regexes.put("\\b" + params.get(i).replace("\\", "\\\\").replaceAll("([^a-zA-Z0-9])", "\\\\$1") + "\\b", "(" + substitutions.get(i) + ")");
 		FlowFrame frame = new FlowFrame(FlowFrame.MACRO);
 		while (lines.hasMoreLines()){
 			TextLine line = lines.nextLine();
-			line.labelPrefix(labelPrefix);
+			line.scope(scope);
 			for (int i = 0; i < line.size(); i++){
 				//System.out.println("Replacing: " + line.get(i));
 				for (int j = 0; j < params.size(); j++)

@@ -8,7 +8,7 @@ public class TextLine extends ArrayList<String>{
 	private String globalLabel;
 	private String lineFile;
 	private int lineNumber;
-	private String labelPrefix;
+	private Scope scope;
 
 	public TextLine(){
 		super();
@@ -23,7 +23,7 @@ public class TextLine extends ArrayList<String>{
 		globalLabel = copy.globalLabel;
 		lineFile = copy.lineFile;
 		lineNumber = copy.lineNumber;
-		labelPrefix = copy.labelPrefix;
+		scope = copy.scope;
 	}
 
 	public void globalLabel(String globalLabel){
@@ -34,12 +34,12 @@ public class TextLine extends ArrayList<String>{
 		return globalLabel;
 	}
 
-	public void labelPrefix(String labelPrefix){
-		this.labelPrefix = labelPrefix;
+	public void scope(Scope scope){
+		this.scope = scope;
 	}
 
-	public String labelPrefix(){
-		return labelPrefix;
+	public Scope scope(){
+		return scope;
 	}
 
 	public void lineNumber(int set){

@@ -248,6 +248,7 @@ public class Assembler{
 				line = structures.get(i).getLine();
 				structures.get(i).programize(i, false);
 			}
+			showLabelAlignment();
 			boolean ready = false;
 			for (int k = 0; k < 8 && ! ready; k++){ // eight passes is really ridiculously high, so we'll stop there and give an error.
 				ready = true;
@@ -345,12 +346,12 @@ public class Assembler{
 		return exp;
 	}
 
-	public void simplifyExpression(MathExpression exp, String globalLabel, final boolean checkDefinitions, final boolean requireLabels, final String labelPrefix){
+	public void simplifyExpression(MathExpression exp, String globalLabel, final boolean checkDefinitions, final boolean requireLabels, final Scope scope){
 		currentGlobalLabel = globalLabel;
-		simplifyExpression(exp, checkDefinitions, requireLabels, labelPrefix);
+		simplifyExpression(exp, checkDefinitions, requireLabels, scope);
 	}
 
-	public void simplifyExpression(MathExpression exp, final boolean checkDefinitions, final boolean requireLabels, final String labelPrefix){
+	public void simplifyExpression(MathExpression exp, final boolean checkDefinitions, final boolean requireLabels, final Scope scope){
 		exp.simplify(new MathExpression.LabelInterpretter(){
 			public Integer interpret(String label){
 				if (registers.contains(label.toUpperCase()))
@@ -363,8 +364,12 @@ public class Assembler{
 						return defined;
 				}
 				String labelToFind = label;
-				if (! labelByteIsDefined(labelToFind) && labelByteIsDefined(labelPrefix + labelToFind))
-					labelToFind = labelPrefix + labelToFind;
+				for (Scope scopeFind = new Scope(scope); scopeFind.size() > 0; scopeFind.pop()){
+					if (labelByteIsDefined(scopeFind + label)){
+						labelToFind = scopeFind + label;
+						break;
+					}
+				}
 				//System.out.println("Searching for label " + label);
 				if (! requireLabels && ! labelByteIsDefined(labelToFind)){
 					//System.out.println("Won't find it.");
@@ -378,7 +383,7 @@ public class Assembler{
 					throw e;
 				}
 				catch(Exception e){
-					throw new RuntimeException(e);
+					throw new RuntimeException(e + " " + scope + labelToFind);
 				}
 			}
 			public Integer call(String label, MathExpression input){
@@ -558,7 +563,7 @@ public class Assembler{
 		{
 			lengthExp = originalLengthExp.clone();
 			if (lengthExp.numericValue() == null)
-				simplifyExpression(lengthExp, line.globalLabel(), false, finalize, line.labelPrefix());
+				simplifyExpression(lengthExp, line.globalLabel(), false, finalize, line.scope());
 			if (lengthExp.numericValue() == null){
 				if (! finalize)
 					return 0;
@@ -574,7 +579,7 @@ public class Assembler{
 				return 0;
 			valueExp = originalValueExp.clone();
 			if (valueExp.numericValue() == null)
-				simplifyExpression(valueExp, line.globalLabel(), false, finalize, line.labelPrefix());
+				simplifyExpression(valueExp, line.globalLabel(), false, finalize, line.scope());
 			if (valueExp.numericValue() == null){
 				if (! finalize)
 					return 0;
@@ -651,7 +656,7 @@ public class Assembler{
 		{
 			boundaryExp = original.clone();
 			if (boundaryExp.numericValue() == null)
-				simplifyExpression(boundaryExp, line.globalLabel(), false, finalize, line.labelPrefix());
+				simplifyExpression(boundaryExp, line.globalLabel(), false, finalize, line.scope());
 			if (boundaryExp.numericValue() == null){
 				if (! finalize)
 					return 1;
@@ -875,7 +880,7 @@ public class Assembler{
 				if (exp == null)
 					continue;
 				exp = exp.clone();
-				simplifyExpression(exp, line.globalLabel(), false, finalize, line.labelPrefix());
+				simplifyExpression(exp, line.globalLabel(), false, finalize, line.scope());
 				if (exp.numericValue() == null){
 					if (! finalize){
 						data[i] = null;
@@ -1189,7 +1194,7 @@ public class Assembler{
 			{
 				//System.out.println("finalize " + (finalize ? "yes" : "no"));
 				exp = original.clone(); // re-calculate from the original every time to allow for moving labels
-				simplifyExpression(exp, globalLabel, false, finalize, line.labelPrefix());
+				simplifyExpression(exp, globalLabel, false, finalize, line.scope());
 			}
 
 			public int toByte(boolean finalize)
