@@ -86,6 +86,14 @@ public class Lexer{
 				}
 				if (line.size() == 0)
 					throw new Exception("Somehow ended up with a 0 length line");
+				if (! line.get(0).equalsIgnoreCase("DAT") && ! assembler.isInstruction(line.get(0))){
+					FlowFrame calledMacro = callMacro(line);
+					calledMacro.active = true;
+					calledMacro.runningFromAddedLines = true;
+					pushFlow(calledMacro);
+					lineSources.add(calledMacro);
+					continue;
+				}
 				if (! line.get(0).equalsIgnoreCase("DAT") && line.size() > 3)
 					throw new Exception("Too many tokens on line " + line.size() + ": " + line);
 				assembler.addInstruction(line);
@@ -103,12 +111,21 @@ public class Lexer{
 	private FlowFrame callMacro(TextLine line)
 		throws Exception
 	{
+		if (line.get(0).indexOf('(') < 0){
+			if (line.size() == 1)
+				line.set(0, line.get(0) + "()");
+			else{
+				String name = line.remove(0);
+				line.set(0, name + "(" + line.get(0));
+				line.set(line.size() - 1, line.get(line.size() - 1) + ")");
+			}
+		}
 		List<String> params = assembler.interpretMacroParts(line);
 		//System.out.println("Calling " + TextLine.joinLine(params));
 		String name = params.remove(0);
 		Macro macro = assembler.getMacro(name);
 		if (macro == null)
-			throw new Exception("Undefined macro");
+			throw new Exception("Undefined macro: " + name);
 		return macro.interpolate(params, line.scope());
 	}
 

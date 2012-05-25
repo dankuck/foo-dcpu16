@@ -9,6 +9,7 @@ import hexer.*;
 public class Assembler{
 
 	private static boolean optimize = true;
+	private static HashMap<String, Integer> instructionBytes = new HashMap<String, Integer>();
 
 	static{
 		String[][] precedence = {
@@ -27,6 +28,22 @@ public class Assembler{
 									{ "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=" }
 								};
 		MathExpression.setPrecedence(precedence);
+		instructionBytes.put("JSR", 0x0); // other non-basic instructions will also have 0x0
+		instructionBytes.put("SET", 0x1);
+		instructionBytes.put("ADD", 0x2);
+		instructionBytes.put("SUB", 0x3);
+		instructionBytes.put("MUL", 0x4);
+		instructionBytes.put("DIV", 0x5);
+		instructionBytes.put("MOD", 0x6);
+		instructionBytes.put("SHL", 0x7);
+		instructionBytes.put("SHR", 0x8);
+		instructionBytes.put("AND", 0x9);
+		instructionBytes.put("BOR", 0xA);
+		instructionBytes.put("XOR", 0xB);
+		instructionBytes.put("IFE", 0xC);
+		instructionBytes.put("IFN", 0xD);
+		instructionBytes.put("IFG", 0xE);
+		instructionBytes.put("IFB", 0xF);
 	}
 
 	private String filename;
@@ -481,7 +498,7 @@ public class Assembler{
 				name += c;
 		}
 		if (firstToken.length() == 0 || firstToken.charAt(0) != '(' || name.length() == 0)
-			throw new Exception("Macro definition is malformed");
+			throw new Exception("Macro definition is malformed: " + line);
 		List<String> params = new ArrayList<String>();
 		if (line.size() == 1){
 			String param = firstToken.substring(1, firstToken.length() - 1);
@@ -953,6 +970,10 @@ public class Assembler{
 		}
 	}
 
+	public boolean isInstruction(String instruction){
+		return instructionBytes.get(instruction.toUpperCase()) != null;
+	}
+
 	private class AssembleInstruction implements AssembleStructure{
 
 		public String instruction;
@@ -961,30 +982,6 @@ public class Assembler{
 		public TextLine line;
 		private AssembleInstruction subbingFor;
 		private AssembleInstruction substitution;
-
-		private HashMap<String, Integer> instructionBytes;
-
-		private void init(){
-			if (instructionBytes == null){
-				instructionBytes = new HashMap<String, Integer>();
-				instructionBytes.put("JSR", 0x0); // other non-basic instructions will also have 0x0
-				instructionBytes.put("SET", 0x1);
-				instructionBytes.put("ADD", 0x2);
-				instructionBytes.put("SUB", 0x3);
-				instructionBytes.put("MUL", 0x4);
-				instructionBytes.put("DIV", 0x5);
-				instructionBytes.put("MOD", 0x6);
-				instructionBytes.put("SHL", 0x7);
-				instructionBytes.put("SHR", 0x8);
-				instructionBytes.put("AND", 0x9);
-				instructionBytes.put("BOR", 0xA);
-				instructionBytes.put("XOR", 0xB);
-				instructionBytes.put("IFE", 0xC);
-				instructionBytes.put("IFN", 0xD);
-				instructionBytes.put("IFG", 0xE);
-				instructionBytes.put("IFB", 0xF);
-			}
-		}
 
 		public AssembleInstruction(TextLine line)
 			throws Exception
@@ -1350,4 +1347,5 @@ public class Assembler{
 	}
 
 }
+
 

@@ -4,8 +4,6 @@
 ; From: http://pastebin.com/raw.php?i=aJSkRMyC
 ; Edited for safety.
 ;
-; NOTE: The macro will not work correctly more than once in the foo-dcpu16 Assembler.
-; Plans to fix that are upcoming
 
 .ifndef nextkey
 
@@ -17,7 +15,7 @@
 	add i,0x9000
 	set target,[i]
 	ife target,0
-		jmp(end)
+		jmp end
 	
 	set [i],0
 	add [keypointer], 1
