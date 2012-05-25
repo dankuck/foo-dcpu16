@@ -341,16 +341,16 @@ public class Assembler{
 		throws Exception
 	{
 		MathExpression exp = MathExpression.parse(string);
-		simplifyExpression(exp, checkDefinitions, requireLabels);
+		simplifyExpression(exp, checkDefinitions, requireLabels, null);
 		return exp;
 	}
 
-	public void simplifyExpression(MathExpression exp, String globalLabel, final boolean checkDefinitions, final boolean requireLabels){
+	public void simplifyExpression(MathExpression exp, String globalLabel, final boolean checkDefinitions, final boolean requireLabels, final String labelPrefix){
 		currentGlobalLabel = globalLabel;
-		simplifyExpression(exp, checkDefinitions, requireLabels);
+		simplifyExpression(exp, checkDefinitions, requireLabels, labelPrefix);
 	}
 
-	public void simplifyExpression(MathExpression exp, final boolean checkDefinitions, final boolean requireLabels){
+	public void simplifyExpression(MathExpression exp, final boolean checkDefinitions, final boolean requireLabels, final String labelPrefix){
 		exp.simplify(new MathExpression.LabelInterpretter(){
 			public Integer interpret(String label){
 				if (registers.contains(label.toUpperCase()))
@@ -362,14 +362,17 @@ public class Assembler{
 					if (defined != null)
 						return defined;
 				}
+				String labelToFind = label;
+				if (! labelByteIsDefined(labelToFind) && labelByteIsDefined(labelPrefix + labelToFind))
+					labelToFind = labelPrefix + labelToFind;
 				//System.out.println("Searching for label " + label);
-				if (! requireLabels && ! labelByteIsDefined(label)){
+				if (! requireLabels && ! labelByteIsDefined(labelToFind)){
 					//System.out.println("Won't find it.");
 					return null;
 				}
 				try{
 					//System.out.println("Found : " + labelToByte(label));
-					return labelToByte(label);
+					return labelToByte(labelToFind);
 				}
 				catch(RuntimeException e){
 					throw e;
@@ -555,7 +558,7 @@ public class Assembler{
 		{
 			lengthExp = originalLengthExp.clone();
 			if (lengthExp.numericValue() == null)
-				simplifyExpression(lengthExp, line.globalLabel(), false, finalize);
+				simplifyExpression(lengthExp, line.globalLabel(), false, finalize, line.labelPrefix());
 			if (lengthExp.numericValue() == null){
 				if (! finalize)
 					return 0;
@@ -571,7 +574,7 @@ public class Assembler{
 				return 0;
 			valueExp = originalValueExp.clone();
 			if (valueExp.numericValue() == null)
-				simplifyExpression(valueExp, line.globalLabel(), false, finalize);
+				simplifyExpression(valueExp, line.globalLabel(), false, finalize, line.labelPrefix());
 			if (valueExp.numericValue() == null){
 				if (! finalize)
 					return 0;
@@ -648,7 +651,7 @@ public class Assembler{
 		{
 			boundaryExp = original.clone();
 			if (boundaryExp.numericValue() == null)
-				simplifyExpression(boundaryExp, line.globalLabel(), false, finalize);
+				simplifyExpression(boundaryExp, line.globalLabel(), false, finalize, line.labelPrefix());
 			if (boundaryExp.numericValue() == null){
 				if (! finalize)
 					return 1;
@@ -872,7 +875,7 @@ public class Assembler{
 				if (exp == null)
 					continue;
 				exp = exp.clone();
-				simplifyExpression(exp, line.globalLabel(), false, finalize);
+				simplifyExpression(exp, line.globalLabel(), false, finalize, line.labelPrefix());
 				if (exp.numericValue() == null){
 					if (! finalize){
 						data[i] = null;
@@ -1186,7 +1189,7 @@ public class Assembler{
 			{
 				//System.out.println("finalize " + (finalize ? "yes" : "no"));
 				exp = original.clone(); // re-calculate from the original every time to allow for moving labels
-				simplifyExpression(exp, globalLabel, false, finalize);
+				simplifyExpression(exp, globalLabel, false, finalize, line.labelPrefix());
 			}
 
 			public int toByte(boolean finalize)

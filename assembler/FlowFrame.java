@@ -32,7 +32,7 @@ public class FlowFrame{
 	public boolean isBottom(){
 		return type == BOTTOM;
 	}
-	public void addLine(List<String> line){
+	public void addLine(TextLine line){
 		if (isRep() || isMacro())
 			lines.add(new TextLine(line));
 	}

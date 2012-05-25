@@ -80,7 +80,7 @@ public class Lexer{
 				}
 				if (line.get(0).charAt(0) == ':' || line.get(0).charAt(line.get(0).length() - 1) == ':'){
 					assembler.currentGlobalLabel(flowtop.globalLabel);
-					assembler.addLabel(line.get(0).replaceAll("^:|:$", ""), org);
+					assembler.addLabel((line.labelPrefix() == null ? "" : line.labelPrefix()) + line.get(0).replaceAll("^:|:$", ""), org);
 					flowtop.globalLabel = assembler.currentGlobalLabel();
 					continue;
 				}

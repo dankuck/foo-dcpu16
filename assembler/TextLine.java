@@ -8,6 +8,7 @@ public class TextLine extends ArrayList<String>{
 	private String globalLabel;
 	private String lineFile;
 	private int lineNumber;
+	private String labelPrefix;
 
 	public TextLine(){
 		super();
@@ -22,6 +23,7 @@ public class TextLine extends ArrayList<String>{
 		globalLabel = copy.globalLabel;
 		lineFile = copy.lineFile;
 		lineNumber = copy.lineNumber;
+		labelPrefix = copy.labelPrefix;
 	}
 
 	public void globalLabel(String globalLabel){
@@ -30,6 +32,14 @@ public class TextLine extends ArrayList<String>{
 
 	public String globalLabel(){
 		return globalLabel;
+	}
+
+	public void labelPrefix(String labelPrefix){
+		this.labelPrefix = labelPrefix;
+	}
+
+	public String labelPrefix(){
+		return labelPrefix;
 	}
 
 	public void lineNumber(int set){

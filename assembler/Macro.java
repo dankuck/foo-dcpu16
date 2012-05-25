@@ -7,6 +7,7 @@ public class Macro{
 	private String name;
 	private List<String> params;
 	private FlowFrame lines;
+	private int counter = 0;
 
 	public Macro(String name, List<String> params, FlowFrame lines){
 		this.name = name;
@@ -19,12 +20,15 @@ public class Macro{
 	{
 		if (params.size() != substitutions.size())
 			throw new Exception("Substitutions size doesn't match parameter size");
+		counter++;
+		String labelPrefix = name + "_" + counter + "::";
 		HashMap<String, String> regexes = new HashMap<String, String>();
 		for (int i = 0; i < params.size(); i++)
 			regexes.put("\\b" + params.get(i).replace("\\", "\\\\").replaceAll("([^a-zA-Z0-9])", "\\\\$1") + "\\b", "(" + substitutions.get(i) + ")");
 		FlowFrame frame = new FlowFrame(FlowFrame.MACRO);
 		while (lines.hasMoreLines()){
-			List<String> line = lines.nextLine();
+			TextLine line = lines.nextLine();
+			line.labelPrefix(labelPrefix);
 			for (int i = 0; i < line.size(); i++){
 				//System.out.println("Replacing: " + line.get(i));
 				for (int j = 0; j < params.size(); j++)
