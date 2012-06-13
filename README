@@ -12,3 +12,31 @@ It also has a test harness which will allow targeted manipulation of the
 chip and data.
 
 The compiler does some optimization for space and speed.
+
+
+
+
+
+== Compiling ==
+
+java Assembler source.asm compiled.x
+
+
+
+
+== Running the Console ==
+
+java DCPU16Screen source.asm
+
+OR
+
+java DCPU16Screen compiled.x
+
+
+
+
+== Running the Test Harness ==
+
+java Harness
+
+Then follow the on-screen menus.
