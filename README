@@ -40,3 +40,16 @@ java -cp DCPU.jar DCPU16Screen compiled.x
 java -cp DCPU.jar Harness
 
 Then follow the on-screen menus.
+
+
+
+
+== Examples ==
+
+See the screen work:
+
+java -cp DCPU.jar DCPU16Screen examples/TestScreen.asm
+
+Notch's test code:
+
+java -cp DCPU.jar DCPU16Screen examples/Test1.asm
