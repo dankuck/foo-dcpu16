@@ -47,6 +47,7 @@ public class Assembler{
 	}
 
 	private String filename;
+	private String contents = null;
 	private List<TextLine> lines = new ArrayList<TextLine>();
 	private String currentGlobalLabel = "";
 	private HashMap<String, Integer> labelsToLines = new HashMap<String, Integer>();
@@ -116,6 +117,16 @@ public class Assembler{
 		this.filename = filename;
 	}
 
+	public Assembler(String contentsOrFilename, boolean contents){
+		init();
+		if (contents){
+			this.contents = contentsOrFilename;
+			this.filename = "eval";
+		}
+		else
+			this.filename = filename;
+	}
+
 	private interface Includer{
 
 		public String pathTo(String filename);
@@ -132,12 +143,9 @@ public class Assembler{
 	public String contents()
 		throws Exception
 	{
-		File file = new File(filename);
-		FileReader reader = new FileReader(file);
-		char[] stringChars = new char[(int)file.length()];
-		reader.read(stringChars, 0, stringChars.length);
-		reader.close();
-		return new String(stringChars);
+		if (contents != null)
+			return contents;
+		return contents(filename);
 	}
 
 	public String contents(String filename)
