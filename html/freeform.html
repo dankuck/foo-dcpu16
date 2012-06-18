@@ -55,8 +55,15 @@
 	add_dcpu();
 
 	var dcpus = [];
+	var iframe;
 
 	function run_this_thing(){
+		if (iframe){
+			document.body.removeChild(iframe);
+			for (var i = 0; i < dcpus.length; i++)
+				dcpus[i].stop();
+			iframe = null;
+		}
 		var some_error = false;
 		for (var i = 0; i < dcpu_inputs.length; i++){
 			dcpus[i] = new DCPU('dcpuApplet');
@@ -82,7 +89,12 @@
 			for (var i = 0; i < dcpus.length; i++)
 				dcpu_messages[i].innerHTML = dcpus[i].exception();
 		}, 500);
-		eval(document.getElementById("javascript_input").value);
+		iframe = document.createElement('iframe');
+		iframe.style.display = "none";
+		document.body.appendChild(iframe);
+		iframe.contentWindow.output = output;
+		iframe.contentWindow.dcpus = dcpus;
+		iframe.contentWindow.eval(document.getElementById("javascript_input").value); // using an iframe to run the code allows us to stop the code just by removing the iframe
 	}
 
 	</script>
