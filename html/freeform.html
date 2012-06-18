@@ -1,0 +1,90 @@
+<html>
+<head>
+	<script type="text/javascript" src="dcpuApplet.js"></script>
+	<style>
+	.javascript_input,
+	.dcpu_input{
+		width: 100%;
+		height: 15em;
+	}
+
+	</style>
+</head>
+<body>
+	<applet name="DCPU Emulator" code="dcpuApplet.DCPUApplet" archive="../DCPUApplet.jar" mayscript id="dcpuApplet" width="0" height="0">
+	</applet>
+	<div style="width: 600px; margin-left: auto; margin-right: auto;">
+		<div id="DCPUInputs"></div>
+		<div>
+			<button onclick="add_dcpu();return false;">Add Another DCPU</button>
+		</div>
+		<div id="JSInput">
+			<h3>JavaScript</h3>
+			<textarea id="javascript_input" class="javascript_input"></textarea>
+		</div>
+		<div>
+			<button onclick="run_this_thing();return false;">Run</button>
+		</div>
+		<h3>var output = document.getElementById('output')</h3>
+		<div id="output" style="border: 1px solid gray">
+			<br />
+			<br />
+			<br />
+			<br />
+			<br />
+			<br />
+			<br />
+		</div>
+	<div>
+	<script type="text/javascript">
+
+	var dcpu_inputs = [];
+	var dcpu_messages = [];
+
+	function add_dcpu(){
+		var index = dcpu_inputs.length;
+		var inputs_box = document.getElementById("DCPUInputs");
+		var div = inputs_box.appendChild(document.createElement("div"));
+		div.appendChild(document.createElement("h3")).appendChild(document.createTextNode("dcpus[" + index + "] = new DCPU('dcpuApplet')"));
+		var textarea = div.appendChild(document.createElement("textarea"));
+		textarea.className = "dcpu_input";
+		dcpu_inputs[index] = textarea;
+		dcpu_messages[index] = div.appendChild(document.createElement("div"));
+	}
+
+	add_dcpu();
+
+	var dcpus = [];
+
+	function run_this_thing(){
+		var some_error = false;
+		for (var i = 0; i < dcpu_inputs.length; i++){
+			dcpus[i] = new DCPU('dcpuApplet');
+			dcpus[i].compile_and_poke(0, dcpu_inputs[i].value);
+			var e = dcpus[i].exception();
+			if (e){
+				some_error = true;
+				dcpu_messages[i].innerHTML = e + "";
+			}
+			else
+				dcpu_messages[i].innerHTML = "";
+		}
+		if (some_error)
+			return;
+		var ran = false;
+		var output = document.getElementById("output");
+		setInterval(function(){
+			if (! ran){
+				for (var i = 0; i < dcpus.length; i++)
+					dcpus[i].run();
+				ran = true;
+			}
+			for (var i = 0; i < dcpus.length; i++)
+				dcpu_messages[i].innerHTML = dcpus[i].exception();
+		}, 500);
+		eval(document.getElementById("javascript_input").value);
+	}
+
+	</script>
+</body>
+</html>
