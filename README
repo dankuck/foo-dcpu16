@@ -1,0 +1,42 @@
+foo-dcpu16 is a DCPU16 compiler and emulator. DCPU16 is the specification for 
+the computer systems emulated in the multiplayer game "0x10c" 
+(http://0x10c.com/).
+
+foo-dcpu16 can compile assembler code and save it to a file. It conforms to 
+0xSCA standards (https://github.com/0x10cStandardsCommittee/0x10c-Standards).
+
+It has a black and white console emulator with some keyboard input. The 
+console emulator can load code from assembly code or a compiled file.
+
+It also has a test harness which will allow targeted manipulation of the 
+chip and data.
+
+The compiler does some optimization for space and speed.
+
+
+
+
+
+== Compiling ==
+
+java Assembler source.asm compiled.x
+
+
+
+
+== Running the Console ==
+
+java DCPU16Screen source.asm
+
+OR
+
+java DCPU16Screen compiled.x
+
+
+
+
+== Running the Test Harness ==
+
+java Harness
+
+Then follow the on-screen menus.
