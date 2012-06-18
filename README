@@ -19,24 +19,24 @@ The compiler does some optimization for space and speed.
 
 == Compiling ==
 
-java Assembler source.asm compiled.x
+java -cp DCPU.jar Assembler source.asm compiled.x
 
 
 
 
 == Running the Console ==
 
-java DCPU16Screen source.asm
+java -cp DCPU.jar DCPU16Screen source.asm
 
 OR
 
-java DCPU16Screen compiled.x
+java -cp DCPU.jar DCPU16Screen compiled.x
 
 
 
 
 == Running the Test Harness ==
 
-java Harness
+java -cp DCPU.jar Harness
 
 Then follow the on-screen menus.
