@@ -21,6 +21,7 @@
 		<div id="JSInput">
 			<h3>JavaScript</h3>
 			<textarea id="javascript_input" class="javascript_input"></textarea>
+			<div id="javascript_message"></div>
 		</div>
 		<div>
 			<button onclick="run_this_thing();return false;">Run</button>
@@ -93,10 +94,11 @@
 				ran = true;
 			}
 			for (var i = 0; i < dcpus.length; i++){
-				dcpu_messages[i].innerHTML = "<pre>" + dcpus[i] + "</pre>";
+				var message = "<pre>" + dcpus[i] + "</pre>";
 				var error = dcpus[i].exception();
 				if (error)
-					dcpu_messages[i].innerHTML += "<div style='color: #800'>" + error + "</div>";
+					message += "<div style='color: #800'>" + error + "</div>";
+				dcpu_messages[i].innerHTML = message;
 			}
 		}, 100);
 		iframe = document.createElement('iframe');
@@ -104,12 +106,19 @@
 		document.body.appendChild(iframe);
 		iframe.contentWindow.output = output;
 		iframe.contentWindow.dcpus = dcpus;
-		var ev = "(function(){\n"
+		var ev = 	"window.onerror = function(error){ parent.document.getElementById('javascript_message').innerHTML = error + ''; };\n"
+					+ "(function(){\n"
 					+ "var window = parent.window;\n"
 					+ "var document = parent.document;\n"
+					+ "var DCPU = parent.DCPU;\n"
 					+ document.getElementById("javascript_input").value + "\n"
 					+ "}).call(parent.window);";
-		iframe.contentWindow.eval(ev); // using an iframe to run the code allows us to stop the code just by removing the iframe
+		try{
+			iframe.contentWindow.eval(ev); // using an iframe to run the code allows us to stop the code just by removing the iframe
+		}
+		catch(e){
+			document.getElementById('javascript_message').innerHTML = e + "";
+		}
 	}
 
 	function stop_this_thing(){
