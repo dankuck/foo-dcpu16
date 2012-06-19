@@ -24,6 +24,7 @@
 		</div>
 		<div>
 			<button onclick="run_this_thing();return false;">Run</button>
+			<button onclick="stop_this_thing();return false;" style="display:none" id="stopper">Stop</button>
 		</div>
 		<h3>var output = document.getElementById('output')</h3>
 		<div id="output" style="border: 1px solid gray">
@@ -58,12 +59,8 @@
 	var iframe;
 
 	function run_this_thing(){
-		if (iframe){
-			document.body.removeChild(iframe);
-			for (var i = 0; i < dcpus.length; i++)
-				dcpus[i].stop();
-			iframe = null;
-		}
+		if (iframe)
+			stop_this_thing();
 		var some_error = false;
 		for (var i = 0; i < dcpu_inputs.length; i++){
 			dcpus[i] = new DCPU('dcpuApplet');
@@ -78,6 +75,7 @@
 		}
 		if (some_error)
 			return;
+		document.getElementById("stopper").style.display = '';
 		var ran = false;
 		var output = document.getElementById("output");
 		setInterval(function(){
@@ -95,6 +93,14 @@
 		iframe.contentWindow.output = output;
 		iframe.contentWindow.dcpus = dcpus;
 		iframe.contentWindow.eval(document.getElementById("javascript_input").value); // using an iframe to run the code allows us to stop the code just by removing the iframe
+	}
+
+	function stop_this_thing(){
+		document.body.removeChild(iframe);
+		for (var i = 0; i < dcpus.length; i++)
+			dcpus[i].stop();
+		iframe = null;
+		document.getElementById("stopper").style.display = 'none';
 	}
 
 	</script>
