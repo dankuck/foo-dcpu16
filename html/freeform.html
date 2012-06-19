@@ -27,7 +27,7 @@
 			<button onclick="stop_this_thing();return false;" style="display:none" id="stopper">Stop</button>
 		</div>
 		<h3>var output = document.getElementById('output')</h3>
-		<div id="output" style="border: 1px solid gray">
+		<div id="output" style="border: 1px solid gray; margin-bottom: 15em;">
 			<br />
 			<br />
 			<br />
@@ -41,6 +41,7 @@
 
 	var dcpu_inputs = [];
 	var dcpu_messages = [];
+	var dcpu_speeds = [];
 
 	function add_dcpu(){
 		var index = dcpu_inputs.length;
@@ -50,6 +51,12 @@
 		var textarea = div.appendChild(document.createElement("textarea"));
 		textarea.className = "dcpu_input";
 		dcpu_inputs[index] = textarea;
+		div.appendChild(document.createTextNode("Speed: "));
+		dcpu_speeds[index] = div.appendChild(document.createElement("input"));
+		dcpu_speeds[index].value = "100";
+		dcpu_speeds[index].style.width = "3em";
+		dcpu_speeds[index].style.textAlign = "right";
+		div.appendChild(document.createTextNode(" kHz"));
 		dcpu_messages[index] = div.appendChild(document.createElement("div"));
 	}
 
@@ -72,6 +79,7 @@
 			}
 			else
 				dcpu_messages[i].innerHTML = "";
+			dcpus[i].set_speed(dcpu_speeds[i].value * 1000);
 		}
 		if (some_error)
 			return;
@@ -84,15 +92,24 @@
 					dcpus[i].run();
 				ran = true;
 			}
-			for (var i = 0; i < dcpus.length; i++)
-				dcpu_messages[i].innerHTML = dcpus[i].exception();
-		}, 500);
+			for (var i = 0; i < dcpus.length; i++){
+				dcpu_messages[i].innerHTML = "<pre>" + dcpus[i] + "</pre>";
+				var error = dcpus[i].exception();
+				if (error)
+					dcpu_messages[i].innerHTML += "<div style='color: #800'>" + error + "</div>";
+			}
+		}, 100);
 		iframe = document.createElement('iframe');
 		iframe.style.display = "none";
 		document.body.appendChild(iframe);
 		iframe.contentWindow.output = output;
 		iframe.contentWindow.dcpus = dcpus;
-		iframe.contentWindow.eval(document.getElementById("javascript_input").value); // using an iframe to run the code allows us to stop the code just by removing the iframe
+		var ev = "(function(){\n"
+					+ "var window = parent.window;\n"
+					+ "var document = parent.document;\n"
+					+ document.getElementById("javascript_input").value + "\n"
+					+ "}).call(parent.window);";
+		iframe.contentWindow.eval(ev); // using an iframe to run the code allows us to stop the code just by removing the iframe
 	}
 
 	function stop_this_thing(){
