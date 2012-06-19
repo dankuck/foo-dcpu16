@@ -8,18 +8,22 @@ window.DCPU = function(dcpuer){
 };
 window.DCPU.prototype = {
 	peek: function(start, length_or_structure){ 
-		var length = typeof structure == 'number' ? length_or_structure : this.structure_length(length_or_structure);
-		var structure = typeof structure == 'number' ? structure : length_or_structure;
-		return this.bytes_to_content(this.dcpuer.peek(this.index, start, length), structure);
+		var length = typeof length_or_structure == 'number' ? length_or_structure : this.structure_length(length_or_structure);
+		var structure = typeof length_or_structure == 'number' ? null : length_or_structure;
+		var hex = this.dcpuer.peekHex(this.index, start, length);
+		var bytes = eval("[0x" + hex.trim().replace(/\s+/g, ",0x") + "]");
+		return this.bytes_to_content(bytes, structure);
 	},
 	poke: function(start, content, structure){ return this.dcpuer.poke(this.index, start, this.content_to_bytes(content, structure)) },
 	compile_and_poke: function(start, code){ return this.dcpuer.compileAndPoke(this.index, start, code) },
-	peekHex: function(start, length){ return this.dcpuer.peekHex(this.index, start, length) },
-	pokeHex: function(start, bytes){ return this.dcpuer.pokeHex(this.index, start, bytes) },
+	peek_hex: function(start, length){ return this.dcpuer.peekHex(this.index, start, length) },
+	poke_hex: function(start, bytes){ return this.dcpuer.pokeHex(this.index, start, bytes) },
 	run: function(){ return this.dcpuer.run(this.index) },
 	stop: function(){ return this.dcpuer.stop(this.index) },
 	is_running: function(){ return this.dcpuer.isRunning(this.index) },
 	exception: function(){ return this.dcpuer.exception(this.index) },
+	set_speed: function(hertz){ return this.dcpuer.setSpeed(this.index, hertz) },
+	toString: function(){ return this.dcpuer.dump(this.index) },
 	content_to_bytes: function(content, structure){
 		if (typeof content == 'string'){
 			var bytes = [];
@@ -93,7 +97,13 @@ window.DCPU.prototype = {
 			length += structure[i][1];
 		return length;
 	},
-	bytes_to_content: function(bytes, structure){
+	bytes_to_content: function(java_bytes, structure){
+		var bytes = [];
+		if (java_bytes instanceof Array)
+			bytes = java_bytes;
+		else
+			for (var i = 0; i < java_bytes.length; i++)
+				bytes[i] = java_bytes[i];
 		if (! structure)
 			return bytes;
 		if (typeof structure == 'object' && typeof structure.fromDCPU == 'function')
@@ -128,6 +138,16 @@ window.DCPU.prototype = {
 			pos += length;
 		}
 		return content;
+	},
+	add_structure: function(name, structure){
+		if (name == 'hex')
+			throw new Error("'hex' is a reserved structure name");
+		this["peek_" + name] = function(location){
+			return this.peek(location, structure);
+		};
+		this["poke_" + name] = function(location, content){
+			this.poke(location, content, structure);
+		};
 	}
 };
 
