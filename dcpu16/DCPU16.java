@@ -367,7 +367,7 @@ public class DCPU16{
 	public String dump(){
 		double speed = hertz();
 		return "Memory:\n" + m.dump(0, 10) + "...\n"
-				+ "Stack: " + Hexer.hex(r.sp().read()) + "\n" + m.dump(r.sp().read(), 10) + "\n"
+				+ "Stack: " + Hexer.hex(r.sp().read()) + "\n" + m.dump(r.sp().read(), 9) + "\n"
 				+ "Registers:\n" + r.dump() + "\n"
 				+ "Others: \nIF: " + (skipInstruction ? "0" : "1") + " Cycles: " + cycles + " Speed: " + (speed > 0 ? "kHz: " + (speed / 1000) : "") + "\n";
 	}

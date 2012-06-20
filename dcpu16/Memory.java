@@ -65,18 +65,15 @@ public class Memory{
 	}
 
 	public String dump(int start, int end){
-		if (start >= size())
-			start = size() - 1;
+		start = start % size();
 		end = start + end;
-		if (end >= size())
-			end = size() - 1;
 		start = 8 * (start / 8);
 		StringBuilder b = new StringBuilder();
 		for (int i = start; i < end; i += 8){
 			int[] v = new int[8];
 			for (int j = 0; j < 8; j++)
-				v[j] = read(i + j);
-			b.append(Hexer.hex(i) + ": " + Hexer.hexArray(v) + "\n");
+				v[j] = read((i + j) % 0x10000);
+			b.append(Hexer.hex(i % 0x10000) + ": " + Hexer.hexArray(v) + "\n");
 		}
 		return b.toString();
 	}
