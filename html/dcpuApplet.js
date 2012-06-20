@@ -62,7 +62,7 @@ window.DCPU.prototype = {
 						for (var j = 0; j < length; j++)
 							bytes.push(subbytes[j]);
 					}
-					else if (type == 'string'){
+					else if (type == 'string' || type == 'string-trim'){
 						start = start + "";
 						for (var i = 0; i < length; i++)
 							bytes.push(i >= start.length ? 0 : start.charCodeAt(i)); 
@@ -124,10 +124,12 @@ window.DCPU.prototype = {
 				else // length == 0
 					content[name] = 0;
 			}
-			else if (type == 'string'){
+			else if (type == 'string' || type == 'string-trim'){
 				var value = "";
-				for (var j = 0; j < start.length && start[j] != 0; j++)
-					value += String.fromCharCode(start[j]);
+				for (var j = 0; j < start.length; j++)
+					value += String.fromCharCode(start[j] != 0 ? start[j] : " ");
+				if (type == 'string-trim')
+					value = value.trim();
 				content[name] = value;
 			}
 			else if (type == 'int[]'){
