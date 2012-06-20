@@ -32,6 +32,8 @@ DAT display_start
 		SET PC, _done
 	IFE [A], 0xA ; \n
 		SET PC, _print_newline
+	IFE [A], 0xD ; \r
+		SET PC, _print_newline
 	:_print_char_literally
 	SET [B], [A]
 	ADD B, 1
@@ -47,7 +49,7 @@ DAT display_start
 	SET PC, POP
 	
 	:_print_newline
-	SET [B], 0
+	SET [B], 0x20
 	ADD B, 1
 	JSR _check_scroll_screen
 	SET X, B
